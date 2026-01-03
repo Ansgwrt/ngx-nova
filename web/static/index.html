@@ -1,0 +1,2607 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Manager Pro</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/x-icon" href="/ui/favicon.ico">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.75);
+            --accent-blue: #38bdf8;
+            --accent-cyan: #22d3ee;
+        }
+        body {
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(56, 189, 248, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(34, 211, 238, 0.05) 0%, transparent 40%);
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+        }
+        [v-cloak] { display: none; }
+        .glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .nav-item { transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
+        .nav-item.active {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-blue);
+            border-right: 3px solid var(--accent-blue);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.08);
+            box-shadow: 0 0 22px rgba(56, 189, 248, 0.45);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 10px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body class="min-h-screen overflow-hidden">
+    <div id="app" v-cloak class="relative min-h-screen">
+        <!-- Toast Notifications -->
+        <div class="fixed top-6 right-6 z-[70] space-y-3 w-72">
+            <div v-for="notice in notifications" :key="notice.id"
+                 :class="['glass px-4 py-3 rounded-2xl border flex items-start justify-between text-sm', noticeStyle(notice.type)]">
+                <span class="pr-4 leading-relaxed">{{ notice.message }}</span>
+                <button @click="removeNotification(notice.id)" class="text-xs text-gray-400 hover:text-white transition">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Login Overlay -->
+        <div v-if="!isAuthenticated" class="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-6">
+            <div class="glass rounded-3xl w-full max-w-md border border-white/10 shadow-2xl">
+                <div class="px-8 py-6 border-b border-white/10 space-y-3">
+                    <h2 class="text-2xl font-bold text-white flex items-center justify-center space-x-3 text-center">
+                        <i class="fas fa-lock text-blue-400"></i><span>登录 Nginx Manager</span>
+                    </h2>
+                    <p class="text-sm text-gray-500">请输入访问令牌以继续操作。若无令牌，请联系系统管理员。</p>
+                    <p class="text-xs text-gray-500 leading-relaxed bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-center">
+                        <i class="fas fa-terminal text-blue-300 mr-2"></i>
+                        首次登录或需要修改令牌时，请在服务器终端执行<br>
+                        <code class="font-mono text-emerald-300 block text-center">tokenctl --set "YOUR_TOKEN" --file /opt/nginx-mgr/auth_token.json</code>
+                        <br>会话有效期为 24 小时，到期后在此页面重新登录即可继续使用。
+                    </p>
+                </div>
+                <div class="px-8 py-6 space-y-4">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">访问令牌</label>
+                        <input v-model="loginToken" type="password" placeholder="Bearer Token"
+                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-400/60 font-mono">
+                    </div>
+                    <p v-if="loginError" class="text-xs text-red-300 bg-red-500/10 border border-red-400/30 rounded-xl px-4 py-2">
+                        <i class="fas fa-circle-exclamation mr-2"></i>{{ loginError }}
+                    </p>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-3">
+                    <button @click="login" :disabled="authenticating"
+                            class="btn-primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-50">
+                        <i class="fas fa-right-to-bracket"></i>
+                        <span>{{ authenticating ? '验证中...' : '登录' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex h-screen">
+            <!-- Sidebar -->
+            <aside class="w-64 glass border-r border-white/10 flex flex-col">
+                <div class="p-8 flex items-center space-x-3">
+                    <div class="w-10 h-10 btn-primary rounded-xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-bolt text-white text-xl"></i>
+                    </div>
+                    <span class="text-xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+                        NGX NOVA
+                    </span>
+                </div>
+
+                <nav class="flex-grow mt-4 px-4 space-y-2">
+                    <button @click="currentTab = 'dashboard'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'dashboard' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-gauge w-5"></i>
+                        <span class="font-medium">控制中心</span>
+                    </button>
+                    <button @click="currentTab = 'sites'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'sites' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-globe w-5"></i>
+                        <span class="font-medium">站点管理</span>
+                    </button>
+                    <button @click="currentTab = 'streams'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'streams' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-network-wired w-5"></i>
+                        <span class="font-medium">端口转发</span>
+                    </button>
+                    <button @click="currentTab = 'logs'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'logs' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-scroll w-5"></i>
+                        <span class="font-medium">日志中心</span>
+                    </button>
+                    <button @click="currentTab = 'notifications'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'notifications' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-bell w-5"></i>
+                        <span class="font-medium">通知设置</span>
+                    </button>
+                    <button @click="currentTab = 'backup'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'backup' ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i class="fas fa-cloud w-5"></i>
+                        <span class="font-medium">备份恢复</span>
+                    </button>
+                </nav>
+
+                <div class="p-6 border-t border-white/5">
+                    <div class="flex items-center space-x-3 text-xs text-gray-500">
+                        <div class="w-2 h-2 rounded-full" :class="status.nginx_active ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></div>
+                        <span>{{ status.nginx_active ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE' }}</span>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="flex-grow overflow-y-auto p-8 space-y-6 relative">
+                <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div>
+                        <h1 class="text-3xl font-bold text-white mb-1">{{ tabTitle }}</h1>
+                        <p class="text-gray-500 text-sm">实时运维与自动化管理中心</p>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <div class="glass px-4 py-2 rounded-full flex items-center space-x-3 border border-white/5">
+                            <span class="text-xs font-mono text-gray-400">{{ status.nginx_version || '未知版本' }}</span>
+                            <div class="w-px h-4 bg-white/10"></div>
+                            <span class="text-xs font-bold" :class="status.nginx_active ? 'text-green-400' : 'text-red-400'">
+                                {{ status.nginx_active ? 'ACTIVE' : 'STOPPED' }}
+                            </span>
+                        </div>
+                        <div v-if="sessionExpiryText" class="hidden md:block text-[11px] text-gray-500 text-right">
+                            会话到期：{{ sessionExpiryText }}
+                        </div>
+                        <button @click="logout" class="glass px-4 py-2 rounded-full flex items-center space-x-2 border border-white/10 text-xs text-gray-300 hover:text-white transition">
+                            <i class="fas fa-sign-out-alt text-red-300"></i>
+                            <span>退出</span>
+                        </button>
+                    </div>
+                </header>
+                <div v-if="sessionExpiryText" class="md:hidden text-[11px] text-gray-500">会话到期：{{ sessionExpiryText }}</div>
+
+                <!-- Dashboard -->
+                <section v-if="currentTab === 'dashboard'" class="space-y-6 animate-fadeIn">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="glass p-6 rounded-3xl relative overflow-hidden group">
+                            <div class="absolute top-4 right-4 w-28 h-28 glass border border-white/10 rounded-full shadow-lg">
+                                <div class="flex flex-col items-center justify-center text-center h-full space-y-1 px-3">
+                                    <span class="text-[10px] text-cyan-200 tracking-[0.35em] uppercase">当前周期</span>
+                                    <span class="text-lg font-bold text-white">{{ trafficSummary.totalLabel }}</span>
+                                    <span v-if="trafficSummary.hasLimit" class="text-[10px] text-gray-300">配额 {{ trafficSummary.limitLabel }}</span>
+                                    <span v-if="trafficSummary.nextReset" class="text-[10px] text-gray-500">重置 {{ trafficSummary.nextReset }}</span>
+                                </div>
+                            </div>
+                            <div class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">服务引擎</div>
+                            <div class="text-3xl font-bold text-white mb-2">Nginx</div>
+                            <div class="text-sm flex items-center" :class="status.nginx_active ? 'text-green-400' : 'text-red-400'">
+                                <i class="fas fa-circle mr-2 text-xs"></i>{{ status.nginx_active ? '服务运行正常' : '服务已停止' }}
+                            </div>
+                            <div class="mt-5 flex flex-wrap gap-3">
+                                <button @click="startInstall" class="glass border border-blue-400/40 text-blue-100 px-4 py-2 rounded-xl text-xs hover:border-blue-300 transition flex items-center space-x-2">
+                                    <i class="fas fa-download"></i><span>安装 Nginx</span>
+                                </button>
+                                <button v-if="installStatus.is_running" @click="openInstallModal" class="glass border border-emerald-400/40 text-emerald-100 px-4 py-2 rounded-xl text-xs hover:border-emerald-300 transition flex items-center space-x-2">
+                                    <i class="fas fa-spinner fa-spin"></i><span>安装中 · 查看进度</span>
+                                </button>
+                                <button @click="confirmUninstall" class="glass border border-red-400/40 text-red-200 px-4 py-2 rounded-xl text-xs hover:border-red-300 transition flex items-center space-x-2">
+                                    <i class="fas fa-trash-alt"></i><span>卸载 Nginx</span>
+                                </button>
+                            </div>
+                            <div v-if="trafficSummary.hasLimit" class="mt-5 space-y-2">
+                                <div class="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                    <div class="h-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500"
+                                         :style="{ width: Math.min(100, trafficSummary.progress || 0) + '%' }"></div>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-gray-500">
+                                    <span>统计起始：{{ trafficSummary.cycleStart || '本次启动' }}</span>
+                                    <span>已用 {{ trafficSummary.progress || 0 }}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="glass p-6 rounded-3xl relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fas fa-layer-group text-6xl"></i></div>
+                            <div class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">站点总览</div>
+                            <div class="text-3xl font-bold text-white mb-4">{{ siteStats.total }} 个站点</div>
+                            <div class="grid grid-cols-2 gap-3 text-xs">
+                                <div class="bg-white/5 rounded-xl px-3 py-2 text-gray-300">反向代理 <span class="float-right text-white font-semibold">{{ siteStats.proxy }}</span></div>
+                                <div class="bg-white/5 rounded-xl px-3 py-2 text-gray-300">静态站点 <span class="float-right text-white font-semibold">{{ siteStats.static }}</span></div>
+                                <div class="bg-white/5 rounded-xl px-3 py-2 text-gray-300">负载均衡 <span class="float-right text-white font-semibold">{{ siteStats.lb }}</span></div>
+                                <div class="bg-white/5 rounded-xl px-3 py-2 text-gray-300">域名重定向 <span class="float-right text-white font-semibold">{{ siteStats.redirect }}</span></div>
+                            </div>
+                        </div>
+                        <div class="glass p-6 rounded-3xl relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i class="fas fa-plug text-6xl"></i></div>
+                            <div class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-4">端口转发</div>
+                            <div class="text-3xl font-bold text-white mb-2">{{ streams.length }} 条规则</div>
+                            <div class="text-sm text-cyan-300 flex items-center">
+                                <i class="fas fa-signal mr-2"></i> TCP/UDP 四层转发可视化管理
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <div class="lg:col-span-2 space-y-6">
+                            <div class="glass rounded-3xl p-6">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-xl font-bold text-white flex items-center space-x-3">
+                                        <i class="fas fa-globe text-blue-400"></i><span>活跃站点</span>
+                                    </h3>
+                                    <button @click="currentTab = 'sites'" class="text-xs text-blue-300 hover:text-blue-200 transition">前往站点管理</button>
+                                </div>
+                                <div v-if="siteConfigs.length" class="overflow-hidden rounded-2xl border border-white/5">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
+                                            <tr>
+                                                <th class="px-4 py-3 text-left">域名</th>
+                                                <th class="px-4 py-3 text-left">类型</th>
+                                                <th class="px-4 py-3 text-left">后端</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-white/5">
+                                            <tr v-for="site in siteConfigs.slice(0,6)" :key="site.domain" class="hover:bg-white/5 transition">
+                                                <td class="px-4 py-3 font-mono text-sm text-white">{{ site.domain }}</td>
+                                                <td class="px-4 py-3">
+                                                    <span class="px-3 py-1 rounded-full text-xs font-semibold border" :class="siteTypeStyle(site.type)">
+                                                        {{ siteTypeLabel(site.type) }}
+                                                    </span>
+                                                </td>
+                                                <td class="px-4 py-3 text-gray-300">
+                                                    <span v-if="site.type === 'proxy'">{{ site.backend_ip }}:{{ site.backend_port }}</span>
+                                                    <span v-else-if="site.type === 'lb'">{{ site.backends.length }} 个节点</span>
+                                                    <span v-else-if="site.type === 'redirect'">{{ site.target_url }}</span>
+                                                    <span v-else>静态资源</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div v-else class="p-10 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
+                                    没有发现站点配置，点击右上角“站点管理”开始部署。
+                                </div>
+                            </div>
+
+                            <div class="glass rounded-3xl p-6 flex flex-col justify-between">
+                                <div class="space-y-3">
+                                    <h3 class="text-xl font-bold text-white flex items-center space-x-3">
+                                        <i class="fas fa-clipboard-list text-indigo-300"></i><span>日志中心</span>
+                                    </h3>
+                                    <p class="text-sm text-gray-400 leading-relaxed">
+                                        实时查看各站点的 Access / Error 日志。点击下方按钮进入独立的“日志中心”板块，支持手动刷新与快速预览。
+                                    </p>
+                                </div>
+                                <button @click="currentTab = 'logs'" class="mt-6 glass border border-indigo-400/40 text-indigo-200 px-4 py-3 rounded-xl text-xs hover:border-indigo-300 transition flex items-center justify-center space-x-2">
+                                    <i class="fas fa-arrow-right"></i><span>打开日志中心</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="glass rounded-3xl p-6 space-y-4">
+                            <h3 class="text-xl font-bold text-white flex items-center space-x-3 mb-4">
+                                <i class="fas fa-toolbox text-emerald-400"></i><span>运维操作</span>
+                            </h3>
+                            <div class="space-y-3">
+                                <button @click="reloadNginx" class="w-full glass border border-white/5 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-blue-500/20 transition">
+                                    <span class="text-sm font-medium text-gray-200 flex items-center space-x-2"><i class="fas fa-sync-alt text-blue-300"></i><span>验证并重载配置</span></span>
+                                    <i class="fas fa-chevron-right text-gray-500 text-xs"></i>
+                                </button>
+                                <div class="space-y-2">
+                                    <button @click="backupConfig" class="w-full glass border border-white/5 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-emerald-500/20 transition">
+                                        <span class="text-sm font-medium text-gray-200 flex items-center space-x-2"><i class="fas fa-cloud-download-alt text-emerald-300"></i><span>生成配置备份</span></span>
+                                        <i class="fas fa-chevron-right text-gray-500 text-xs"></i>
+                                    </button>
+                                    <p class="text-[11px] text-gray-500 bg-white/5 border border-white/10 rounded-xl px-3 py-2">
+                                        备份文件存储于 <code class="font-mono text-emerald-300">/root/nginx_backups</code>，可随时下载或恢复。
+                                    </p>
+                                </div>
+                                <button @click="restoreLocalBackup" class="w-full glass border border-orange-400/40 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-orange-500/20 transition">
+                                    <span class="text-sm font-medium text-orange-200 flex items-center space-x-2"><i class="fas fa-undo-alt"></i><span>从本地备份恢复</span></span>
+                                    <i class="fas fa-chevron-right text-orange-200/70 text-xs"></i>
+                                </button>
+                                <button @click="openInstallModal" class="w-full glass border border-white/5 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-cyan-500/20 transition">
+                                    <span class="text-sm font-medium text-gray-200 flex items-center space-x-2"><i class="fas fa-list text-cyan-300"></i><span>查看安装日志</span></span>
+                                    <i class="fas fa-chevron-right text-gray-500 text-xs"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Site Management -->
+                <section v-if="currentTab === 'sites'" class="space-y-6 animate-fadeIn">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <p class="text-gray-500 text-sm max-w-xl leading-relaxed">
+                            管理所有站点的反向代理、静态资源、负载均衡与重定向配置，支持一键新增与同步重载。
+                        </p>
+                        <button @click="openCreateSiteModal" class="btn-primary text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-xl">
+                            <i class="fas fa-plus-circle mr-2"></i>新增站点
+                        </button>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                        <div class="glass rounded-3xl p-4 lg:col-span-2 h-full">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-lg font-semibold text-white">站点列表</h3>
+                                <span class="text-xs text-gray-500 uppercase">总计 {{ siteConfigs.length }}</span>
+                            </div>
+                            <div class="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                                <button v-for="site in siteConfigs" :key="site.domain" @click="selectSite(site.domain)"
+                                    :class="['w-full glass border px-4 py-3 rounded-2xl text-left transition-all', selectedSite === site.domain ? 'border-blue-400/60 bg-blue-500/10 shadow-lg' : 'border-white/5 hover:bg-white/5']">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="text-white font-semibold text-sm">{{ site.domain }}</div>
+                                            <div class="text-xs text-gray-500 mt-1 font-mono truncate">
+                                                <span v-if="site.type === 'proxy'">{{ site.backend_ip }}:{{ site.backend_port }}</span>
+                                                <span v-else-if="site.type === 'lb'">{{ site.backends.length }} backend(s)</span>
+                                                <span v-else-if="site.type === 'redirect'">{{ site.target_url }}</span>
+                                                <span v-else>静态资源</span>
+                                            </div>
+                                        </div>
+                                        <span class="px-3 py-1 rounded-full text-[11px] font-semibold border" :class="siteTypeStyle(site.type)">
+                                            {{ siteTypeLabel(site.type) }}
+                                        </span>
+                                    </div>
+                                </button>
+                            </div>
+                            <div v-if="!siteConfigs.length" class="text-sm text-gray-500 text-center py-16">
+                                暂无站点，可点击右上角“新增站点”快速部署。
+                            </div>
+                        </div>
+
+                        <div class="glass rounded-3xl p-6 lg:col-span-3 h-full">
+                            <template v-if="selectedSiteDetail">
+                                <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+                                    <div>
+                                        <div class="text-gray-500 text-xs uppercase tracking-[0.5em] mb-2">当前站点</div>
+                                        <div class="flex items-center space-x-4">
+                                            <h3 class="text-2xl font-bold text-white">{{ selectedSiteDetail.domain }}</h3>
+                                            <span class="px-3 py-1 rounded-full text-xs font-semibold border" :class="siteTypeStyle(selectedSiteDetail.type)">
+                                                {{ siteTypeLabel(selectedSiteDetail.type) }}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="flex flex-wrap gap-2">
+                                        <button @click="openEditSiteModal(selectedSiteDetail)" class="glass border border-white/10 px-4 py-2 rounded-xl text-xs text-gray-200 hover:text-white transition flex items-center space-x-2">
+                                            <i class="fas fa-edit text-blue-300"></i><span>编辑</span>
+                                        </button>
+                                        <button @click="openRawModal" class="glass border border-white/10 px-4 py-2 rounded-xl text-xs text-gray-200 hover:text-white transition flex items-center space-x-2">
+                                            <i class="fas fa-code text-emerald-300"></i><span>手动编辑配置</span>
+                                        </button>
+                                        <button @click="deleteSite(selectedSiteDetail.domain)" class="glass border border-white/10 px-4 py-2 rounded-xl text-xs text-red-300 hover:text-red-200 transition flex items-center space-x-2">
+                                            <i class="fas fa-trash"></i><span>删除</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                    <div class="glass border border-white/5 rounded-2xl px-4 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-2">站点类型</div>
+                                        <div class="text-white font-semibold text-lg">{{ siteTypeLabel(selectedSiteDetail.type) }}</div>
+                                        <p class="text-xs text-gray-500 mt-1">{{ siteTypeDescription(selectedSiteDetail.type) }}</p>
+                                    </div>
+                                    <div class="glass border border-white/5 rounded-2xl px-4 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-2">部署目录</div>
+                                        <div class="text-white font-semibold text-sm font-mono">/etc/nginx/sites-available/{{ selectedSiteDetail.domain }}</div>
+                                        <p class="text-xs text-gray-500 mt-1">启用链接：/etc/nginx/sites-enabled/{{ selectedSiteDetail.domain }}</p>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-6">
+                                    <div v-if="selectedSiteDetail.type === 'proxy'" class="glass border border-white/5 rounded-2xl px-5 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-2">后端目标</div>
+                                        <div class="text-white font-mono">{{ selectedSiteDetail.backend_ip }}:{{ selectedSiteDetail.backend_port }}</div>
+                                    </div>
+
+                                    <div v-if="selectedSiteDetail.type === 'lb'" class="glass border border-white/5 rounded-2xl px-5 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-3">负载均衡节点</div>
+                                        <ul class="space-y-2 text-sm">
+                                            <li v-for="backend in selectedSiteDetail.backends" :key="backend" class="glass border border-white/5 rounded-xl px-3 py-2 font-mono text-gray-200">
+                                                {{ backend }}
+                                            </li>
+                                            <li v-if="!selectedSiteDetail.backends.length" class="text-gray-500">暂无后端节点</li>
+                                        </ul>
+                                    </div>
+
+                                    <div v-if="selectedSiteDetail.type === 'redirect'" class="glass border border-white/5 rounded-2xl px-5 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-2">跳转目标</div>
+                                        <div class="text-blue-300 font-mono break-all">{{ selectedSiteDetail.target_url }}</div>
+                                    </div>
+
+                                    <div v-if="selectedSiteDetail.type === 'static'" class="glass border border-white/5 rounded-2xl px-5 py-4">
+                                        <div class="text-xs text-gray-500 uppercase tracking-widest mb-2">静态资源目录</div>
+                                        <div class="text-white font-mono">/var/www/html/{{ selectedSiteDetail.domain }}</div>
+                                        <p class="text-xs text-gray-500 mt-1">请通过 SFTP/SSH 上传静态文件至该目录。</p>
+                                    </div>
+                                </div>
+                            </template>
+                            <div v-else class="h-full flex items-center justify-center text-gray-500 text-sm">
+                                请选择左侧的站点查看详情。
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Stream Management -->
+                <section v-if="currentTab === 'streams'" class="space-y-6 animate-fadeIn">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <p class="text-gray-500 text-sm max-w-xl leading-relaxed">
+                            管理四层 TCP/UDP 转发规则，快速维护上游目标并实时回滚。
+                        </p>
+                        <button @click="openCreateStreamModal" class="btn-primary text-white px-6 py-3 rounded-2xl font-bold flex items-center shadow-xl">
+                            <i class="fas fa-plus mr-2"></i>新增转发
+                        </button>
+                    </div>
+
+                    <div class="glass rounded-3xl p-6 border border-white/5">
+                        <div v-if="streams.length" class="overflow-x-auto">
+                            <table class="min-w-full text-sm">
+                                <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
+                                    <tr>
+                                        <th class="px-4 py-3 text-left">名称</th>
+                                        <th class="px-4 py-3 text-left">监听端口</th>
+                                        <th class="px-4 py-3 text-left">目标地址</th>
+                                        <th class="px-4 py-3 text-right">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-white/5">
+                                    <tr v-for="stream in streams" :key="stream.name" class="hover:bg-white/5 transition">
+                                        <td class="px-4 py-3 font-semibold text-white">{{ stream.name }}</td>
+                                        <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.listen_port }}</td>
+                                        <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.target }}</td>
+                                        <td class="px-4 py-3 text-right space-x-3">
+                                            <button @click="openEditStreamModal(stream)" class="text-blue-300 hover:text-blue-200 text-xs transition">编辑</button>
+                                            <button @click="openStreamRawModal(stream)" class="text-emerald-300 hover:text-emerald-200 text-xs transition">手动编辑</button>
+                                            <button @click="deleteStream(stream.name)" class="text-red-300 hover:text-red-200 text-xs transition">删除</button>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div v-else class="text-gray-500 text-sm text-center py-16 border border-dashed border-white/10 rounded-2xl">
+                            暂无端口转发规则，点击右上角“新增转发”添加第一条规则。
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Log Management -->
+                <section v-if="currentTab === 'logs'" class="space-y-6 animate-fadeIn">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <p class="text-sm text-gray-400 leading-relaxed">
+                                手动加载并查看各站点的访问与错误日志，支持逐站点预览与独立查看。日志默认仅显示今日（{{ todayText }}）的内容。
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <button @click="refreshSiteLogs(true)" :disabled="siteLogsLoading" class="glass border border-indigo-400/40 text-indigo-200 px-4 py-2 rounded-xl text-xs hover:border-indigo-300 transition flex items-center space-x-2 disabled:opacity-50">
+                                <i :class="siteLogsLoading ? 'fas fa-spinner fa-spin' : 'fas fa-rotate-right'"></i>
+                                <span>{{ siteLogsLoading ? '刷新中...' : '刷新全部' }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="glass rounded-3xl p-6">
+                        <div v-if="siteLogsLoading" class="flex items-center justify-center py-16 text-sm text-gray-500">
+                            <i class="fas fa-circle-notch fa-spin mr-2"></i>正在加载日志...
+                        </div>
+                        <div v-else-if="!siteConfigs.length" class="py-16 text-center text-sm text-gray-500 border border-dashed border-white/10 rounded-2xl">
+                            暂无站点配置，先在“站点管理”中新增站点。
+                        </div>
+                        <div v-else class="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                            <div v-for="site in siteConfigs" :key="site.domain" class="glass border border-white/5 rounded-2xl p-5">
+                                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-3">
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-3">
+                                            <div class="text-sm font-semibold text-white truncate">{{ site.domain }}</div>
+                                            <span class="px-2 py-0.5 rounded-full text-[11px] font-semibold border" :class="siteTypeStyle(site.type)">
+                                                {{ siteTypeLabel(site.type) }}
+                                            </span>
+                                        </div>
+                                        <div class="text-[11px] text-gray-400 mt-1">
+                                            <template v-if="siteLogsMap[site.domain]">
+                                                <template v-if="siteLogsMap[site.domain].access.length || siteLogsMap[site.domain].error.length">
+                                                    <span v-if="siteLogsMap[site.domain].access.length">访问 {{ siteLogsMap[site.domain].access.length }} 行</span>
+                                                    <span v-if="siteLogsMap[site.domain].access.length && siteLogsMap[site.domain].error.length" class="mx-1 text-gray-600">·</span>
+                                                    <span v-if="siteLogsMap[site.domain].error.length">错误 {{ siteLogsMap[site.domain].error.length }} 行</span>
+                                                </template>
+                                                <template v-else>
+                                                    已加载，暂无日志记录
+                                                </template>
+                                            </template>
+                                            <template v-else>
+                                                暂未加载日志，点击右侧“刷新”获取最新数据
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <button @click="openLogViewer(site.domain)" class="glass border border-white/10 text-xs px-3 py-2 rounded-xl hover:border-blue-300 transition flex items-center space-x-1 text-blue-200">
+                                            <i class="fas fa-eye"></i><span>查看日志</span>
+                                        </button>
+                                        <button @click="refreshSingleLog(site.domain)" :disabled="siteLogsLoading" class="glass border border-white/10 text-xs px-3 py-2 rounded-xl hover:border-emerald-300 transition flex items-center space-x-1 text-emerald-200 disabled:opacity-50">
+                                            <i :class="siteLogsLoading ? 'fas fa-spinner fa-spin' : 'fas fa-rotate-right'"></i><span>刷新</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div v-if="logPreview(siteLogsMap[site.domain], 'access')" class="mb-3">
+                                    <div class="text-[11px] text-emerald-300 uppercase tracking-widest mb-1 flex items-center">
+                                        <i class="fas fa-file-alt mr-2"></i>Access 预览
+                                    </div>
+                                    <pre class="bg-black/30 rounded-xl px-3 py-2 text-[11px] text-gray-300 whitespace-pre-wrap leading-5 max-h-32 overflow-y-auto">{{ logPreview(siteLogsMap[site.domain], 'access') }}</pre>
+                                </div>
+                                <div v-if="logPreview(siteLogsMap[site.domain], 'error')">
+                                    <div class="text-[11px] text-red-300 uppercase tracking-widest mb-1 flex items-center">
+                                        <i class="fas fa-triangle-exclamation mr-2"></i>Error 预览
+                                    </div>
+                                    <pre class="bg-black/30 rounded-xl px-3 py-2 text-[11px] text-red-200/80 whitespace-pre-wrap leading-5 max-h-32 overflow-y-auto">{{ logPreview(siteLogsMap[site.domain], 'error') }}</pre>
+                                </div>
+                                <div v-if="!logPreview(siteLogsMap[site.domain], 'access') && !logPreview(siteLogsMap[site.domain], 'error')" class="text-[11px] text-gray-500 border border-dashed border-white/10 rounded-xl px-3 py-3">
+                                    暂无可预览日志片段，刷新后即可查看最新内容。
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Notification Settings -->
+                <section v-if="currentTab === 'notifications'" class="space-y-6 animate-fadeIn">
+                    <div class="glass rounded-3xl border border-white/5 p-6">
+                        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                            <div>
+                                <h2 class="text-xl font-semibold text-white flex items-center space-x-3">
+                                    <i class="fas fa-bell text-amber-300"></i><span>通知策略</span>
+                                </h2>
+                                <p class="text-sm text-gray-500 mt-2 leading-relaxed">
+                                    配置钉钉与 Telegram 告警渠道。当出入站流量达到设定阈值或服务器即将到期时，将按照偏好发送提醒。
+                                </p>
+                            </div>
+                            <div class="text-xs text-gray-500 bg-white/5 border border-white/10 rounded-2xl px-4 py-2">
+                                上次保存：<span class="text-gray-300">{{ notificationLastUpdated }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="notificationLoading" class="glass rounded-3xl border border-white/5 p-10 text-sm text-gray-400 flex items-center justify-center space-x-3">
+                        <i class="fas fa-circle-notch fa-spin"></i>
+                        <span>正在加载通知设置...</span>
+                    </div>
+
+                    <form v-else @submit.prevent="saveNotificationSettings" class="space-y-5">
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                            <div class="glass rounded-3xl border border-white/5 p-4 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-base font-semibold text-white">基础信息</h3>
+                                    <span class="text-[11px] text-gray-500">通知标题显示备注名</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">服务器备注</label>
+                                        <input v-model="notificationSettings.server_label" type="text" maxlength="64"
+                                               placeholder="如：深圳-生产节点 A"
+                                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">月流量上限（GB）</label>
+                                        <input v-model.number="notificationSettings.traffic_monthly_limit_gb" type="number" min="0" step="0.1"
+                                               placeholder="0 表示不限"
+                                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">流量告警阈值 (%)</label>
+                                        <input v-model.number="notificationSettings.traffic_threshold" type="number" min="0" max="100"
+                                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white font-mono text-sm outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">说明</label>
+                                        <div class="bg-slate-900/60 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-gray-400 leading-relaxed">
+                                            阈值设为 0 时关闭流量告警；配额用于计算圆环进度。
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="glass rounded-3xl border border-white/5 p-4 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-base font-semibold text-white">服务器到期提醒</h3>
+                                    <span class="text-[11px] text-gray-500">到期日也是流量重置日</span>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">到期日期</label>
+                                        <input v-model="notificationSettings.server_expiry_date" type="date"
+                                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">提前通知天数</label>
+                                        <div class="flex items-center space-x-2">
+                                            <input v-model.number="notificationSettings.expiry_notify_days" type="number" min="0"
+                                                   class="flex-1 bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white font-mono text-sm outline-none">
+                                            <span class="text-gray-400 text-xs">天</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="bg-slate-900/60 border border-white/10 rounded-xl px-3 py-2.5 text-[11px] text-gray-400 leading-relaxed">
+                                    留空或 0 表示不发送到期提醒；修改保存即重置流量统计基线。
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                            <div class="glass rounded-3xl border border-white/5 p-4 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-base font-semibold text-white flex items-center space-x-2">
+                                    <i class="fab fa-dingtalk text-blue-300"></i><span>钉钉通知</span></h3>
+                                    <label class="flex items-center space-x-2 text-xs text-gray-400">
+                                        <input type="checkbox" v-model="notificationSettings.dingtalk.enabled" class="form-checkbox rounded border-white/20 bg-slate-900">
+                                        <span>{{ notificationSettings.dingtalk.enabled ? '已启用' : '已停用' }}</span>
+                                    </label>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Webhook 地址</label>
+                                    <input v-model="notificationSettings.dingtalk.webhook" :disabled="!notificationSettings.dingtalk.enabled"
+                                           type="text" placeholder="https://oapi.dingtalk.com/robot/send?access_token=..."
+                                           class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none disabled:opacity-40">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">加签密钥（可选）</label>
+                                    <input v-model="notificationSettings.dingtalk.secret" :disabled="!notificationSettings.dingtalk.enabled"
+                                           type="text" placeholder="SECxxxxxxxxxxxxxxxx"
+                                           class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none disabled:opacity-40">
+                                </div>
+                                <p class="text-[11px] text-gray-500">钉钉安全设置开启加签时需要填写密钥。</p>
+                            </div>
+
+                            <div class="glass rounded-3xl border border-white/5 p-4 space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="text-base font-semibold text-white flex items-center space-x-2">
+                                    <i class="fab fa-telegram text-sky-300"></i><span>Telegram 通知</span></h3>
+                                    <label class="flex items-center space-x-2 text-xs text-gray-400">
+                                        <input type="checkbox" v-model="notificationSettings.telegram.enabled" class="form-checkbox rounded border-white/20 bg-slate-900">
+                                        <span>{{ notificationSettings.telegram.enabled ? '已启用' : '已停用' }}</span>
+                                    </label>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Bot Token</label>
+                                    <input v-model="notificationSettings.telegram.bot_token" :disabled="!notificationSettings.telegram.enabled"
+                                           type="text" placeholder="123456:ABCDEF..."
+                                           class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none disabled:opacity-40">
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Chat ID</label>
+                                    <input v-model="notificationSettings.telegram.chat_id" :disabled="!notificationSettings.telegram.enabled"
+                                           type="text" placeholder="@your_channel 或者 123456789"
+                                           class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-3 py-2.5 text-white text-sm outline-none disabled:opacity-40">
+                                </div>
+                                <p class="text-[11px] text-gray-500">确保机器人已加入目标会话，并具备发送消息的权限。</p>
+                            </div>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <button type="submit" :disabled="notificationSaving"
+                                    class="btn-primary px-8 py-3 rounded-2xl font-bold text-white shadow-xl flex items-center space-x-2 disabled:opacity-60">
+                                <i :class="notificationSaving ? 'fas fa-spinner fa-spin' : 'fas fa-save'"></i>
+                                <span>{{ notificationSaving ? '保存中...' : '保存设置' }}</span>
+                            </button>
+                        </div>
+                    </form>
+                </section>
+
+                <!-- Backup Management -->
+                <section v-if="currentTab === 'backup'" class="space-y-6 animate-fadeIn">
+                    <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                        <div>
+                            <div class="text-gray-500 text-xs uppercase tracking-[0.4em] mb-1">R2 AUTOMATION</div>
+                            <p class="text-gray-500 text-sm mt-2">通过 Cloudflare R2 对 Nginx 配置进行备份与恢复，自动化守护您的线上环境。</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                        <div class="space-y-6">
+                            <div class="glass rounded-3xl p-6 border border-white/5 h-full">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-semibold text-white flex items-center space-x-2">
+                                        <i class="fas fa-shield-alt text-emerald-300"></i><span>当前状态</span>
+                                    </h3>
+                                    <div v-if="backupStatusLoading" class="text-xs text-blue-300 flex items-center space-x-2">
+                                        <i class="fas fa-spinner fa-spin"></i><span>刷新中</span>
+                                    </div>
+                                    <button v-else @click="fetchBackupStatus()" class="text-xs text-blue-300 hover:text-blue-200 transition">刷新</button>
+                                </div>
+                                <div class="space-y-3 text-sm">
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-400">rclone 配置</span>
+                                        <span :class="backupStatus.rclone_configured ? 'text-emerald-300' : 'text-red-300'">
+                                            {{ backupStatus.rclone_configured ? '已就绪' : '未配置' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-400">备份任务</span>
+                                        <span :class="backupStatus.backup_configured ? 'text-emerald-300' : 'text-red-300'">
+                                            {{ backupStatus.backup_configured ? '正常运行' : '未配置' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-gray-400">密钥状态</span>
+                                        <span :class="backupStatus.has_secret ? 'text-emerald-300' : 'text-red-300'">
+                                            {{ backupStatus.has_secret ? '已保存' : '未设置' }}
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-gray-500 leading-relaxed">
+                                        <div>源目录：<span class="font-mono text-white">{{ backupStatus.source_dir || '未设置' }}</span></div>
+                                        <div class="mt-1">R2 路径：<span class="font-mono text-white break-all">{{ backupStatus.remote_path || '未设置' }}</span></div>
+                                    </div>
+                                </div>
+                                <div class="mt-6 space-y-3">
+                                    <button @click="runBackupNow" :disabled="backupRunLoading"
+                                        class="w-full glass border border-emerald-400/40 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-emerald-500/20 transition disabled:opacity-50">
+                                        <span class="text-sm font-medium text-emerald-200 flex items-center space-x-2">
+                                            <i :class="backupRunLoading ? 'fas fa-spinner fa-spin' : 'fas fa-cloud-upload-alt'"></i>
+                                            <span>{{ backupRunLoading ? '备份执行中...' : '立即执行备份' }}</span>
+                                        </span>
+                                        <i class="fas fa-chevron-right text-emerald-200/60 text-xs"></i>
+                                    </button>
+                                    <button @click="testBackupConnection" :disabled="backupTestLoading"
+                                        class="w-full glass border border-blue-400/40 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-blue-500/20 transition disabled:opacity-50">
+                                        <span class="text-sm font-medium text-blue-200 flex items-center space-x-2">
+                                            <i :class="backupTestLoading ? 'fas fa-spinner fa-spin' : 'fas fa-plug'"></i>
+                                            <span>{{ backupTestLoading ? '测试连接...' : '测试 R2 连接' }}</span>
+                                        </span>
+                                        <i class="fas fa-chevron-right text-blue-200/60 text-xs"></i>
+                                    </button>
+                                    <div class="glass border border-orange-400/30 bg-orange-500/5 rounded-2xl px-4 py-4 space-y-3">
+                                        <div class="space-y-2">
+                                            <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">R2 存储路径</label>
+                                            <input v-model="restoreForm.remote_path" type="text" placeholder="bucket/path"
+                                                class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none">
+                                        </div>
+                                        <button @click="restoreBackup" :disabled="restoreLoading"
+                                            class="w-full glass border border-orange-400/50 px-4 py-3 rounded-2xl flex items-center justify-between hover:bg-orange-500/20 transition disabled:opacity-60">
+                                            <span class="text-sm font-medium text-orange-100 flex items-center space-x-2">
+                                                <i :class="restoreLoading ? 'fas fa-spinner fa-spin' : 'fas fa-undo-alt'"></i>
+                                                <span>{{ restoreLoading ? '恢复中...' : '恢复最新备份' }}</span>
+                                            </span>
+                                            <i class="fas fa-chevron-right text-orange-200/70 text-xs"></i>
+                                        </button>
+                                        <p class="text-[11px] text-orange-200/80 bg-orange-500/10 border border-orange-400/20 rounded-xl px-3 py-2">
+                                            将下载最新的 <code class="font-mono text-emerald-300">.tar.gz</code> 包并自动恢复，操作前建议先生成本地备份。
+                                        </p>
+                                    </div>
+                                    <div class="text-[11px] text-gray-500 leading-relaxed bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
+                                        定时任务默认每天 02:00 自动备份，可在服务器执行 <code class="font-mono text-emerald-300">crontab -l</code> 查看。
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="glass rounded-3xl p-6 border border-white/5 xl:col-span-2">
+                            <div class="flex items-center justify-between mb-6">
+                                <h3 class="text-xl font-bold text-white flex items-center space-x-3">
+                                    <i class="fas fa-sliders-h text-blue-300"></i><span>Cloudflare R2 配置</span>
+                                </h3>
+                            </div>
+                            <form class="space-y-5" @submit.prevent="saveBackupSetup">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Access Key ID</label>
+                                        <input v-model="backupForm.access_key" type="text" autocomplete="off" placeholder="示例：ABC123..."
+                                            class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">Secret Access Key</label>
+                                        <input v-model="backupForm.secret_key" type="password" placeholder="仅用于写入配置，不会保存明文"
+                                            class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white outline-none">
+                                    </div>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">R2 Endpoint</label>
+                                    <input v-model="backupForm.endpoint" type="text" placeholder="https://&lt;accountid&gt;.r2.cloudflarestorage.com"
+                                        class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white outline-none">
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="space-y-2">
+                                    <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">备份源目录</label>
+                                        <input v-model="backupForm.source_dir" type="text" placeholder="/etc/nginx"
+                                            class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none">
+                                    </div>
+                                    <div class="space-y-2">
+                                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">R2 存储路径</label>
+                                        <input v-model="backupForm.remote_path" type="text" placeholder="bucket/path"
+                                            class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none">
+                                    </div>
+                                </div>
+                                <div class="flex items-center space-x-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-xs text-gray-400">
+                                    <input id="skipBackup" v-model="skipInitialBackup" type="checkbox" class="h-4 w-4 rounded border-white/20 bg-slate-900/70">
+                                    <label for="skipBackup" class="cursor-pointer">跳过首次立即备份（仅写入配置）</label>
+                                </div>
+                                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                                    <p class="text-[11px] text-gray-500 bg-white/5 border border-white/10 rounded-xl px-4 py-3 leading-relaxed">
+                                        保存后会自动安装 <code class="font-mono text-emerald-300">rclone</code>、<code class="font-mono text-emerald-300">pigz</code> 等依赖，并生成每日备份任务。
+                                        成功配置后，可在左侧状态卡片执行手动备份或恢复。
+                                    </p>
+                                    <button type="submit" :disabled="backupSaving"
+                                        class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-60">
+                                        <i :class="backupSaving ? 'fas fa-spinner fa-spin' : 'fas fa-save'"></i>
+                                        <span>{{ backupSaving ? '保存中...' : '保存配置' }}</span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- Modal: Create/Edit Site -->
+        <div v-if="showSiteModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+            <div class="glass rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white">{{ isSiteEdit ? '编辑站点' : '新增站点' }}</h3>
+                    <button @click="showSiteModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">访问域名</label>
+                            <input v-model="siteForm.domain" :disabled="isSiteEdit" type="text" placeholder="example.com"
+                                   class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-blue-500 outline-none transition disabled:opacity-50">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">站点类型</label>
+                            <select v-model="siteForm.type"
+                                    class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-500">
+                                <option v-for="t in siteTypes" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div v-if="siteForm.type === 'proxy'" class="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fadeIn">
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">后端 IP</label>
+                            <input v-model="siteForm.backend_ip" type="text"
+                                   class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none">
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">后端端口</label>
+                            <input v-model.number="siteForm.backend_port" type="number"
+                                   class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none">
+                        </div>
+                    </div>
+
+                    <div v-if="siteForm.type === 'lb'" class="space-y-3 animate-fadeIn">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">后端列表 (每行一个 IP:PORT)</label>
+                        <textarea v-model="backendsText" rows="3"
+                                  class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none font-mono text-sm"></textarea>
+                    </div>
+
+                    <div v-if="siteForm.type === 'redirect'" class="space-y-3 animate-fadeIn">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">目标 URL</label>
+                        <input v-model="siteForm.target_url" type="text" placeholder="https://new-site.com"
+                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none">
+                    </div>
+
+                    <div v-if="siteForm.type === 'static'" class="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs">
+                        <i class="fas fa-info-circle mr-2"></i>静态资源将存放在 <code>/var/www/html/{{ siteForm.domain || 'your-domain' }}</code>
+                    </div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                    <button @click="showSiteModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
+                    <button @click="saveSite" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg">
+                        {{ isSiteEdit ? '保存修改' : '确认创建' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Manual Raw Edit -->
+        <div v-if="showRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
+                        <i class="fas fa-code text-emerald-300"></i><span>手动编辑配置 - {{ selectedSite }}</span>
+                    </h3>
+                    <button @click="showRawModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 space-y-3">
+                    <div class="text-xs text-gray-500 flex items-center space-x-2">
+                        <i class="fas fa-circle-info text-blue-300"></i>
+                        <span>提交后自动执行 <code class="font-mono text-emerald-300">nginx -t</code> & <code class="font-mono text-emerald-300">systemctl reload nginx</code>，失败将回滚。</span>
+                    </div>
+                    <textarea v-model="rawContentDraft" :disabled="rawLoading" rows="18" spellcheck="false" autocomplete="off"
+                              class="w-full bg-black/50 border border-white/10 rounded-2xl px-5 py-4 text-sm text-emerald-100 font-mono outline-none"></textarea>
+                    <div v-if="rawLoading" class="text-xs text-blue-300"><i class="fas fa-spinner fa-spin mr-2"></i>请求处理中，请稍候...</div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                    <button @click="showRawModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
+                    <button @click="saveRaw" :disabled="rawLoading" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-60">
+                        <i class="fas fa-shield-check"></i><span>{{ rawLoading ? '验证中...' : '验证并重载' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Create/Edit Stream -->
+        <div v-if="showStreamModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+            <div class="glass rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white">{{ isStreamEdit ? '编辑端口转发' : '新增端口转发' }}</h3>
+                    <button @click="showStreamModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-8 space-y-5">
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">规则名称</label>
+                        <input v-model="streamForm.name" :disabled="isStreamEdit" type="text" placeholder="api-gateway"
+                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-blue-500 outline-none transition disabled:opacity-50">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">监听端口</label>
+                        <input v-model.number="streamForm.listen_port" type="number" placeholder="443"
+                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none">
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">目标地址 (IP:PORT)</label>
+                        <input v-model="streamForm.target" type="text" placeholder="10.0.0.12:443"
+                               class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none">
+                    </div>
+                    <div class="p-4 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-200 text-xs">
+                        <i class="fas fa-info-circle mr-2"></i>保存后将自动验证并重载 Nginx，如重载失败会自动回滚到原配置。
+                    </div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                    <button @click="showStreamModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
+                    <button @click="saveStream" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg">
+                        {{ isStreamEdit ? '保存修改' : '确认创建' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Stream Raw Edit -->
+        <div v-if="showStreamRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
+                        <i class="fas fa-terminal text-emerald-300"></i><span>手动编辑转发 - {{ streamRawName }}</span>
+                    </h3>
+                    <button @click="showStreamRawModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 space-y-3">
+                    <div class="text-xs text-gray-500 flex items-center space-x-2">
+                        <i class="fas fa-circle-info text-blue-300"></i>
+                        <span>保存后自动执行 <code class="font-mono text-emerald-300">nginx -t</code> 与 <code class="font-mono text-emerald-300">systemctl reload nginx</code>，失败会回滚原配置。</span>
+                    </div>
+                    <textarea v-model="streamRawContent" :disabled="streamRawLoading" rows="18"
+                              class="w-full bg-black/50 border border-white/10 rounded-2xl px-5 py-4 text-sm text-emerald-100 font-mono outline-none"></textarea>
+                    <div v-if="streamRawLoading" class="text-xs text-blue-300"><i class="fas fa-spinner fa-spin mr-2"></i>请求处理中，请稍候...</div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                    <button @click="showStreamRawModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
+                    <button @click="saveStreamRaw" :disabled="streamRawLoading" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-60">
+                        <i class="fas fa-shield-check"></i><span>{{ streamRawLoading ? '验证中...' : '验证并重载' }}</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Site Log Viewer -->
+        <div v-if="showLogModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div class="glass rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
+                        <i class="fas fa-eye text-indigo-300"></i><span>{{ logModalSite }} · 日志详情</span>
+                    </h3>
+                    <button @click="closeLogModal" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-3">
+                                <h4 class="text-sm font-semibold text-emerald-300 uppercase tracking-widest">Access Log</h4>
+                                <button @click="copyLog('access')" class="text-sm text-gray-200 hover:text-white transition font-semibold" title="复制 Access Log">拷贝</button>
+                            </div>
+                            <span class="text-[11px] text-gray-500">{{ logModalContent.access.length }} 行</span>
+                        </div>
+                        <div class="bg-black/40 border border-white/10 rounded-2xl h-72 overflow-y-auto text-[11px] text-gray-200 font-mono p-4 leading-5">
+                            <template v-if="logModalContent.access.length">
+                                <div v-for="(line, idx) in logModalContent.access" :key="idx" class="whitespace-pre-wrap mb-1">{{ line }}</div>
+                            </template>
+                            <div v-else class="text-gray-500 text-xs text-center py-10">暂无访问日志记录。</div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <div class="flex items-center space-x-3">
+                                <h4 class="text-sm font-semibold text-red-300 uppercase tracking-widest">Error Log</h4>
+                                <button @click="copyLog('error')" class="text-sm text-gray-200 hover:text-white transition font-semibold" title="复制 Error Log">拷贝</button>
+                            </div>
+                            <span class="text-[11px] text-gray-500">{{ logModalContent.error.length }} 行</span>
+                        </div>
+                        <div class="bg-black/40 border border-white/10 rounded-2xl h-72 overflow-y-auto text-[11px] text-red-200 font-mono p-4 leading-5">
+                            <template v-if="logModalContent.error.length">
+                                <div v-for="(line, idx) in logModalContent.error" :key="idx" class="whitespace-pre-wrap mb-1">{{ line }}</div>
+                            </template>
+                            <div v-else class="text-gray-500 text-xs text-center py-10">暂无错误日志记录。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 flex justify-end">
+                    <button @click="closeLogModal" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">关闭</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Install Progress -->
+        <div v-if="showInstallModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
+            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
+                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
+                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
+                        <i class="fas fa-terminal text-blue-300"></i><span>Nginx 安装进度</span>
+                    </h3>
+                    <button @click="closeInstallModal" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase tracking-widest mb-2">当前状态</div>
+                        <div class="flex items-center justify-between text-sm text-white">
+                            <span>
+                                <i :class="installStatus.is_running ? 'fas fa-spinner fa-spin text-blue-300' : (installStatus.exit_code === 0 ? 'fas fa-check-circle text-emerald-300' : 'fas fa-triangle-exclamation text-red-300')"></i>
+                                <span class="ml-2">{{ installStatusText }}</span>
+                            </span>
+                            <span class="text-xs text-gray-400">{{ installProgress }}%</span>
+                        </div>
+                        <div class="mt-3 h-2 bg-white/10 rounded-full overflow-hidden">
+                            <div class="h-full bg-gradient-to-r from-blue-400 to-cyan-300 transition-all duration-500" :style="{ width: installProgress + '%' }"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-400 uppercase tracking-widest mb-2">进度日志</div>
+                        <div ref="installLogRef" class="bg-black/45 border border-white/10 rounded-2xl p-4 h-64 overflow-y-auto text-xs font-mono text-gray-200 space-y-1">
+                            <div v-for="(line, idx) in installStatus.logs" :key="idx">{{ line }}</div>
+                            <div v-if="!installStatus.logs || !installStatus.logs.length" class="text-gray-500">暂无日志输出。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-8 py-6 bg-white/5 text-right text-xs text-gray-500">
+                    <span v-if="installStatus.is_running">安装进行中，请勿关闭窗口，日志每 2 秒自动刷新。</span>
+                    <span v-else>安装任务已结束，可关闭窗口。</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
+
+        const siteTypes = [
+            { id: 'proxy', name: '反向代理' },
+            { id: 'static', name: '静态站点' },
+            { id: 'lb', name: '负载均衡' },
+            { id: 'redirect', name: '域名重定向' }
+        ];
+
+        const siteTypeLabels = {
+            proxy: '反向代理',
+            static: '静态站点',
+            lb: '负载均衡',
+            redirect: '域名重定向'
+        };
+
+        const siteTypeDesc = {
+            proxy: '将流量转发到指定后端服务，适合动态服务或上游应用。',
+            static: '提供纯静态内容，可直接上传到对应目录。',
+            lb: '对多个后端节点做轮询调度，提升集群可用性。',
+            redirect: '把请求 301 重定向到新的目标域名或地址。'
+        };
+
+        const siteTypeStyles = {
+            proxy: 'bg-blue-500/10 text-blue-300 border-blue-400/40',
+            static: 'bg-emerald-500/10 text-emerald-300 border-emerald-400/40',
+            lb: 'bg-purple-500/10 text-purple-300 border-purple-400/40',
+            redirect: 'bg-orange-500/10 text-orange-300 border-orange-400/40'
+        };
+
+        const installSteps = ['安装依赖', '安装 Rust', '创建目录', '下载源码', '编译 Brotli', '编译 Nginx', '配置系统'];
+        const defaultBackupSourceDir = '/etc/nginx';
+
+        const defaultSite = () => ({
+            domain: '',
+            type: 'proxy',
+            backend_ip: '127.0.0.1',
+            backend_port: 80,
+            backends: [],
+            target_url: ''
+        });
+
+        const defaultStream = () => ({
+            name: '',
+            listen_port: 0,
+            target: ''
+        });
+
+        const defaultNotificationSettings = () => ({
+            traffic_threshold: 80,
+            server_expiry_date: '',
+            expiry_notify_days: 7,
+            server_label: '',
+            traffic_monthly_limit_gb: 0,
+            dingtalk: { enabled: false, webhook: '', secret: '' },
+            telegram: { enabled: false, bot_token: '', chat_id: '' },
+            last_updated_unix_time: 0
+        });
+
+        createApp({
+            setup() {
+                const currentTab = ref('dashboard');
+                const status = ref({ nginx_active: false, nginx_version: '' });
+                const siteConfigs = ref([]);
+                const selectedSite = ref('');
+                const showSiteModal = ref(false);
+                const isSiteEdit = ref(false);
+                const siteForm = ref(defaultSite());
+                const backendsText = ref('');
+                const showRawModal = ref(false);
+                const rawContentDraft = ref('');
+                const rawLoading = ref(false);
+                const streams = ref([]);
+                const showStreamModal = ref(false);
+                const isStreamEdit = ref(false);
+                const streamForm = ref(defaultStream());
+                const showStreamRawModal = ref(false);
+                const streamRawName = ref('');
+                const streamRawContent = ref('');
+                const streamRawLoading = ref(false);
+                const siteLogs = ref([]);
+                const siteLogsLoading = ref(false);
+                const todayText = new Date().toLocaleDateString();
+                const showLogModal = ref(false);
+                const logModalSite = ref('');
+                const logModalContent = ref({ access: [], error: [] });
+
+                const backupStatus = ref({
+                    rclone_configured: false,
+                    backup_configured: false,
+                    source_dir: defaultBackupSourceDir,
+                    remote_path: '',
+                    access_key: '',
+                    endpoint: '',
+                    has_secret: false
+                });
+                const backupStatusLoading = ref(false);
+                const backupForm = ref({
+                    access_key: '',
+                    secret_key: '',
+                    endpoint: '',
+                    source_dir: defaultBackupSourceDir,
+                    remote_path: ''
+                });
+                const skipInitialBackup = ref(false);
+                const backupSaving = ref(false);
+                const backupRunLoading = ref(false);
+                const backupTestLoading = ref(false);
+                const restoreForm = ref({ remote_path: '' });
+                const restoreLoading = ref(false);
+
+                const storedToken = localStorage.getItem('apiToken') || '';
+                const storedExpiry = localStorage.getItem('sessionExpiresAt') || '';
+                const apiToken = ref(storedToken);
+                const loginToken = ref(storedToken);
+                const loginError = ref('');
+                const authenticating = ref(false);
+                const isAuthenticated = ref(false);
+                const tokenExpiresAt = ref(storedExpiry);
+
+                const formatBytes = (value) => {
+                    const units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+                    let bytes = Number(value) || 0;
+                    if (bytes <= 0) {
+                        return '0 B';
+                    }
+                    const exponent = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+                    const scaled = bytes / Math.pow(1024, exponent);
+                    return `${scaled >= 100 ? scaled.toFixed(0) : scaled >= 10 ? scaled.toFixed(1) : scaled.toFixed(2)} ${units[exponent]}`;
+                };
+
+                const notifications = ref([]);
+                const notify = (type, message) => {
+                    const id = Date.now() + Math.random();
+                    notifications.value.push({ id, type, message });
+                    setTimeout(() => {
+                        notifications.value = notifications.value.filter(n => n.id !== id);
+                    }, 4000);
+                };
+                const removeNotification = (id) => {
+                    notifications.value = notifications.value.filter(n => n.id !== id);
+                };
+                const noticeStyle = (type) => ({
+                    success: 'border-emerald-400/40 text-emerald-200',
+                    error: 'border-red-400/40 text-red-200',
+                    info: 'border-blue-400/40 text-blue-200'
+                }[type] || 'border-white/10 text-gray-200');
+
+                const notificationSettings = ref(defaultNotificationSettings());
+                const notificationLoading = ref(false);
+                const notificationSaving = ref(false);
+
+                const normalizeNotificationPayload = (data = {}) => {
+                    const normalized = defaultNotificationSettings();
+                    const dingtalkData = data.dingtalk || {};
+                    const telegramData = data.telegram || {};
+                    if (Number.isFinite(Number(data.traffic_threshold))) {
+                        normalized.traffic_threshold = Number(data.traffic_threshold);
+                    }
+                    if (typeof data.server_expiry_date === 'string') {
+                        normalized.server_expiry_date = data.server_expiry_date;
+                    }
+                    if (Number.isFinite(Number(data.expiry_notify_days))) {
+                        normalized.expiry_notify_days = Number(data.expiry_notify_days);
+                    }
+                    if (typeof data.server_label === 'string') {
+                        normalized.server_label = data.server_label;
+                    }
+                    if (Number.isFinite(Number(data.traffic_monthly_limit_gb))) {
+                        normalized.traffic_monthly_limit_gb = Number(data.traffic_monthly_limit_gb);
+                    }
+                    normalized.dingtalk.enabled = !!dingtalkData.enabled;
+                    normalized.dingtalk.webhook = dingtalkData.webhook || '';
+                    normalized.dingtalk.secret = dingtalkData.secret || '';
+                    normalized.telegram.enabled = !!telegramData.enabled;
+                    normalized.telegram.bot_token = telegramData.bot_token || '';
+                    normalized.telegram.chat_id = telegramData.chat_id || '';
+                    if (Number.isFinite(Number(data.last_updated_unix_time))) {
+                        normalized.last_updated_unix_time = Number(data.last_updated_unix_time);
+                    } else if (Number.isFinite(Number(data.updated_at_unix))) {
+                        normalized.last_updated_unix_time = Number(data.updated_at_unix);
+                    }
+                    return normalized;
+                };
+
+                const notificationLastUpdated = computed(() => {
+                    const ts = Number(notificationSettings.value.last_updated_unix_time) || 0;
+                    if (!ts) {
+                        return '尚未保存';
+                    }
+                    const time = new Date(ts * 1000);
+                    if (Number.isNaN(time.getTime())) {
+                        return '尚未保存';
+                    }
+                    return time.toLocaleString();
+                });
+
+                const readJson = async (res) => {
+                    const contentType = res.headers.get('content-type') || '';
+                    if (contentType.includes('application/json')) {
+                        return await res.json().catch(() => ({}));
+                    }
+                    return {};
+                };
+
+                const installStatus = ref({ logs: [], is_running: false, exit_code: 0 });
+                const showInstallModal = ref(false);
+                const installPolling = ref(false);
+                const installLogRef = ref(null);
+
+                const tabTitle = computed(() => ({
+                    dashboard: '控制中心',
+                    sites: '站点管理',
+                    streams: '端口转发',
+                    logs: '日志中心',
+                    notifications: '通知设置',
+                    backup: 'Backup & Restore'
+                }[currentTab.value] || '控制中心'));
+
+                const siteStats = computed(() => {
+                    const summary = { total: siteConfigs.value.length, proxy: 0, static: 0, lb: 0, redirect: 0 };
+                    siteConfigs.value.forEach(site => {
+                        summary[site.type] = (summary[site.type] || 0) + 1;
+                    });
+                    return summary;
+                });
+
+                const selectedSiteDetail = computed(() => siteConfigs.value.find(site => site.domain === selectedSite.value) || null);
+
+                const installProgress = computed(() => {
+                    if (!installStatus.value) return 0;
+                    const total = installSteps.length;
+                    if (!total) return 0;
+                    const logs = installStatus.value.logs || [];
+                    let done = 0;
+                    installSteps.forEach(step => {
+                        if (logs.some(line => line.includes(`<<< 完成: ${step}`))) {
+                            done += 1;
+                        }
+                    });
+                    let progress = (done / total) * 100;
+                    if (installStatus.value.is_running && done < total) {
+                        progress += (1 / total) * 50;
+                    }
+                    if (!installStatus.value.is_running) {
+                        progress = installStatus.value.exit_code === 0 ? 100 : Math.max(progress, 5);
+                    }
+                    return Math.min(100, Math.round(progress));
+                });
+
+                const installStatusText = computed(() => {
+                    if (installStatus.value.is_running) {
+                        return '安装任务正在执行...';
+                    }
+                    if (installStatus.value.exit_code === 0) {
+                        return installStatus.value.logs.length ? '安装任务已完成' : '暂无安装记录';
+                    }
+                    return '安装任务失败，请查看日志';
+                });
+
+                const trafficSummary = computed(() => {
+                    const stats = (status.value && status.value.network_traffic) ? status.value.network_traffic : {};
+                    const cycleUsed = Number(stats.cycle_used_bytes);
+                    const totalBytes = Number.isFinite(cycleUsed) && cycleUsed >= 0
+                        ? cycleUsed
+                        : (Number(stats.total_bytes) || 0);
+                    const limitBytes = Number(stats.cycle_limit_bytes) || 0;
+                    const progress = limitBytes > 0
+                        ? Math.min(100, Math.round((totalBytes / limitBytes) * 100))
+                        : null;
+                    let nextReset = '';
+                    if (stats.cycle_next_reset) {
+                        const t = new Date(stats.cycle_next_reset);
+                        if (!Number.isNaN(t.getTime())) {
+                            nextReset = t.toLocaleDateString();
+                        }
+                    }
+                    let cycleStart = '';
+                    if (stats.cycle_start) {
+                        const t = new Date(stats.cycle_start);
+                        if (!Number.isNaN(t.getTime())) {
+                            cycleStart = t.toLocaleDateString();
+                        }
+                    }
+                    return {
+                        totalLabel: formatBytes(totalBytes),
+                        limitLabel: limitBytes > 0 ? formatBytes(limitBytes) : '',
+                        nextReset,
+                        cycleStart,
+                        progress,
+                        hasLimit: limitBytes > 0
+                    };
+                });
+
+                const sessionExpiryText = computed(() => {
+                    if (!tokenExpiresAt.value) return '';
+                    const expire = new Date(tokenExpiresAt.value);
+                    if (Number.isNaN(expire.getTime())) return '';
+                    return expire.toLocaleString();
+                });
+
+                const siteTypeLabel = (type) => siteTypeLabels[type] || type;
+                const siteTypeDescription = (type) => siteTypeDesc[type] || '';
+                const siteTypeStyle = (type) => siteTypeStyles[type] || 'bg-white/5 text-gray-200 border-white/10';
+
+                const withAuth = (options = {}) => {
+                    const opts = { ...options };
+                    opts.headers = { ...(opts.headers || {}) };
+                    if (apiToken.value) {
+                        opts.headers['Authorization'] = 'Bearer ' + apiToken.value;
+                    }
+                    return opts;
+                };
+
+                let statusTimer = null;
+                let installTimer = null;
+
+                const stopPolling = () => {
+                    if (statusTimer) {
+                        clearInterval(statusTimer);
+                        statusTimer = null;
+                    }
+                };
+
+                const startPolling = () => {
+                    stopPolling();
+                    statusTimer = setInterval(fetchStatus, 5000);
+                };
+
+                const stopInstallPolling = () => {
+                    if (installTimer) {
+                        clearInterval(installTimer);
+                        installTimer = null;
+                    }
+                    installPolling.value = false;
+                };
+
+                const startInstallPolling = () => {
+                    if (installTimer) return;
+                    installPolling.value = true;
+                    installTimer = setInterval(fetchInstallLogs, 2000);
+                };
+
+                const logout = (showMessage = true) => {
+                    stopPolling();
+                    stopInstallPolling();
+                    apiToken.value = '';
+                    localStorage.removeItem('apiToken');
+                    localStorage.removeItem('sessionExpiresAt');
+                    isAuthenticated.value = false;
+                    loginToken.value = '';
+                    siteConfigs.value = [];
+                    streams.value = [];
+                    selectedSite.value = '';
+                    showSiteModal.value = false;
+                    showStreamModal.value = false;
+                    showRawModal.value = false;
+                    showStreamRawModal.value = false;
+                    streamRawName.value = '';
+                    streamRawContent.value = '';
+                    streamRawLoading.value = false;
+                    showLogModal.value = false;
+                    logModalSite.value = '';
+                    logModalContent.value = { access: [], error: [] };
+                    siteLogs.value = [];
+                    siteLogsLoading.value = false;
+                    rawContentDraft.value = '';
+                    tokenExpiresAt.value = '';
+                    backupStatus.value = {
+                        rclone_configured: false,
+                        backup_configured: false,
+                        source_dir: defaultBackupSourceDir,
+                        remote_path: '',
+                        access_key: '',
+                        endpoint: '',
+                        has_secret: false
+                    };
+                    backupStatusLoading.value = false;
+                    backupForm.value = {
+                        access_key: '',
+                        secret_key: '',
+                        endpoint: '',
+                        source_dir: defaultBackupSourceDir,
+                        remote_path: ''
+                    };
+                    skipInitialBackup.value = false;
+                    backupSaving.value = false;
+                    backupRunLoading.value = false;
+                    backupTestLoading.value = false;
+                    restoreForm.value = { remote_path: '' };
+                    restoreLoading.value = false;
+                    notificationSettings.value = defaultNotificationSettings();
+                    notificationLoading.value = false;
+                    notificationSaving.value = false;
+                    if (showMessage) {
+                        notify('info', '已退出登录');
+                    }
+                };
+
+                const handleUnauthorized = (message = '认证已过期，请重新登录') => {
+                    logout(false);
+                    loginError.value = message;
+                    notify('error', message);
+                };
+
+                const ensureSiteSelection = () => {
+                    if (!siteConfigs.value.length) {
+                        selectedSite.value = '';
+                        return;
+                    }
+                    if (!selectedSite.value || !siteConfigs.value.find(site => site.domain === selectedSite.value)) {
+                        selectedSite.value = siteConfigs.value[0].domain;
+                    }
+                };
+
+                const fetchStatus = async () => {
+                    if (!isAuthenticated.value) return;
+                    try {
+                        const res = await fetch('/api/v1/system/status', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            status.value = data;
+                        }
+                    } catch (e) {
+                        notify('error', '获取系统状态失败: ' + e.message);
+                    }
+                };
+
+                const fetchSites = async () => {
+                    if (!isAuthenticated.value) return;
+                    try {
+                        const res = await fetch('/api/v1/sites/details', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            siteConfigs.value = data;
+                            ensureSiteSelection();
+                        }
+                    } catch (e) {
+                        notify('error', '获取站点列表失败: ' + e.message);
+                    }
+                };
+
+                const fetchStreams = async () => {
+                    if (!isAuthenticated.value) return;
+                    try {
+                        const res = await fetch('/api/v1/streams/details', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            streams.value = data;
+                        }
+                    } catch (e) {
+                        notify('error', '获取端口转发失败: ' + e.message);
+                    }
+                };
+
+                const fetchNotificationSettings = async () => {
+                    if (!isAuthenticated.value) return;
+                    notificationLoading.value = true;
+                    try {
+                        const res = await fetch('/api/v1/settings/notifications', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notificationSettings.value = normalizeNotificationPayload(data);
+                        } else {
+                            notify('error', '获取通知设置失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '获取通知设置失败: ' + e.message);
+                    } finally {
+                        notificationLoading.value = false;
+                    }
+                };
+
+                const saveNotificationSettings = async () => {
+                    const serverLabel = (notificationSettings.value.server_label || '').trim();
+                    const monthlyLimit = Number(notificationSettings.value.traffic_monthly_limit_gb) || 0;
+                    const payload = {
+                        traffic_threshold: Number(notificationSettings.value.traffic_threshold) || 0,
+                        server_expiry_date: (notificationSettings.value.server_expiry_date || '').trim(),
+                        expiry_notify_days: Number(notificationSettings.value.expiry_notify_days) || 0,
+                        server_label: serverLabel,
+                        traffic_monthly_limit_gb: monthlyLimit < 0 ? 0 : Number(monthlyLimit.toFixed(2)),
+                        dingtalk: {
+                            enabled: !!notificationSettings.value.dingtalk.enabled,
+                            webhook: (notificationSettings.value.dingtalk.webhook || '').trim(),
+                            secret: (notificationSettings.value.dingtalk.secret || '').trim()
+                        },
+                        telegram: {
+                            enabled: !!notificationSettings.value.telegram.enabled,
+                            bot_token: (notificationSettings.value.telegram.bot_token || '').trim(),
+                            chat_id: (notificationSettings.value.telegram.chat_id || '').trim()
+                        }
+                    };
+
+                    if (payload.traffic_threshold < 0 || payload.traffic_threshold > 100) {
+                        notify('error', '流量阈值请设置在 0 - 100 之间');
+                        return;
+                    }
+                    if (payload.expiry_notify_days < 0) {
+                        notify('error', '提前通知天数不能为负数');
+                        return;
+                    }
+                    if (payload.server_expiry_date && !/^\d{4}-\d{2}-\d{2}$/.test(payload.server_expiry_date)) {
+                        notify('error', '到期日期格式应为 YYYY-MM-DD');
+                        return;
+                    }
+                    if (payload.traffic_monthly_limit_gb < 0) {
+                        notify('error', '月流量上限不能为负数');
+                        return;
+                    }
+                    if (payload.dingtalk.enabled && !payload.dingtalk.webhook) {
+                        notify('error', '启用钉钉通知时请填写 Webhook 地址');
+                        return;
+                    }
+                    if (payload.telegram.enabled && (!payload.telegram.bot_token || !payload.telegram.chat_id)) {
+                        notify('error', '启用 Telegram 通知时请填写 Bot Token 与 Chat ID');
+                        return;
+                    }
+
+                    notificationSaving.value = true;
+                    try {
+                        const res = await fetch('/api/v1/settings/notifications', withAuth({
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notificationSettings.value = normalizeNotificationPayload(data);
+                            notify('success', '通知设置已保存');
+                        } else {
+                            notify('error', '保存失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '保存失败: ' + e.message);
+                    } finally {
+                        notificationSaving.value = false;
+                    }
+                };
+
+                const refreshSiteLogs = async (notifyError = false) => {
+                    if (!isAuthenticated.value) return false;
+                    siteLogsLoading.value = true;
+                    let success = false;
+                    try {
+                        const res = await fetch('/api/v1/system/site-logs', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return false;
+                        }
+                        if (res.ok) {
+                            const list = Array.isArray(data) ? data : [];
+                            list.sort((a, b) => (a.domain || '').localeCompare(b.domain || '', 'zh-Hans-CN'));
+                            siteLogs.value = list.map(item => ({
+                                domain: item.domain || '',
+                                access: Array.isArray(item.access) ? item.access : [],
+                                error: Array.isArray(item.error) ? item.error : []
+                            }));
+                            success = true;
+                        } else if (notifyError) {
+                            notify('error', '获取站点日志失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        if (notifyError) {
+                            notify('error', '获取站点日志失败: ' + e.message);
+                        }
+                    } finally {
+                        siteLogsLoading.value = false;
+                    }
+                    return success;
+                };
+
+                const siteLogsMap = computed(() => {
+                    const map = {};
+                    (siteLogs.value || []).forEach(entry => {
+                        if (!entry || !entry.domain) return;
+                        map[entry.domain] = {
+                            access: Array.isArray(entry.access) ? entry.access : [],
+                            error: Array.isArray(entry.error) ? entry.error : []
+                        };
+                    });
+                    return map;
+                });
+
+                const logPreview = (entry, kind) => {
+                    if (!entry) return '';
+                    const lines = Array.isArray(entry[kind]) ? entry[kind] : [];
+                    if (!lines.length) return '';
+                    const slice = lines.slice(-Math.min(lines.length, 3));
+                    return slice.join('\n');
+                };
+
+                const openLogViewer = async (domain) => {
+                    if (!domain) return;
+                    let entry = siteLogsMap.value[domain];
+                    if (!entry) {
+                        const ok = await refreshSiteLogs(true);
+                        if (ok) {
+                            entry = siteLogsMap.value[domain];
+                        }
+                    }
+                    if (!entry || (!entry.access.length && !entry.error.length)) {
+                        notify('info', domain + ' 暂无日志记录');
+                        return;
+                    }
+                    logModalSite.value = domain;
+                    logModalContent.value = {
+                        access: entry.access.slice(),
+                        error: entry.error.slice()
+                    };
+                    showLogModal.value = true;
+                    await nextTick();
+                };
+
+                const copyLog = async (kind) => {
+                    const labels = { access: '访问日志', error: '错误日志' };
+                    const lines = Array.isArray(logModalContent.value[kind]) ? logModalContent.value[kind] : [];
+                    if (!lines.length) {
+                        notify('info', (labels[kind] || '日志') + '为空，无法复制');
+                        return;
+                    }
+                    const text = lines.join('\n');
+                    try {
+                        if (navigator.clipboard?.writeText) {
+                            await navigator.clipboard.writeText(text);
+                        } else {
+                            const textarea = document.createElement('textarea');
+                            textarea.value = text;
+                            textarea.setAttribute('readonly', '');
+                            textarea.style.position = 'fixed';
+                            textarea.style.left = '-9999px';
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                        }
+                        notify('success', (labels[kind] || '日志') + '已复制');
+                    } catch (err) {
+                        notify('error', '复制失败: ' + (err?.message || '未知错误'));
+                    }
+                };
+
+                const closeLogModal = () => {
+                    showLogModal.value = false;
+                    logModalSite.value = '';
+                    logModalContent.value = { access: [], error: [] };
+                };
+
+                const refreshSingleLog = async (domain) => {
+                    if (!domain) return;
+                    const ok = await refreshSiteLogs(true);
+                    if (ok) {
+                        const entry = siteLogsMap.value[domain];
+                        if (entry && (entry.access.length || entry.error.length)) {
+                            notify('success', domain + ' 日志已刷新');
+                        } else {
+                            notify('info', domain + ' 暂无日志记录');
+                        }
+                    }
+                };
+
+                const syncBackupFormFromStatus = (force = false) => {
+                    const statusSnapshot = backupStatus.value || {};
+                    if (force || !backupForm.value.access_key) {
+                        backupForm.value.access_key = statusSnapshot.access_key || '';
+                    }
+                    if (force || !backupForm.value.endpoint) {
+                        backupForm.value.endpoint = statusSnapshot.endpoint || '';
+                    }
+                    if (force || !backupForm.value.source_dir) {
+                        backupForm.value.source_dir = statusSnapshot.source_dir || defaultBackupSourceDir;
+                    }
+                    if (force || !backupForm.value.remote_path) {
+                        backupForm.value.remote_path = statusSnapshot.remote_path || '';
+                    }
+                    if (!restoreForm.value.remote_path && statusSnapshot.remote_path) {
+                        restoreForm.value.remote_path = statusSnapshot.remote_path;
+                    }
+                };
+
+                const fetchBackupStatus = async (notifyError = true, forceSync = false) => {
+                    if (!isAuthenticated.value) return;
+                    backupStatusLoading.value = true;
+                    try {
+                        const res = await fetch('/api/v1/backup/status', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            const normalized = {
+                                rclone_configured: !!data.rclone_configured,
+                                backup_configured: !!data.backup_configured,
+                                source_dir: data.source_dir || defaultBackupSourceDir,
+                                remote_path: data.remote_path || '',
+                                access_key: data.access_key || '',
+                                endpoint: data.endpoint || '',
+                                has_secret: !!data.has_secret
+                            };
+                            backupStatus.value = normalized;
+                            syncBackupFormFromStatus(forceSync);
+                        } else if (notifyError) {
+                            notify('error', '获取备份状态失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        if (notifyError) {
+                            notify('error', '获取备份状态失败: ' + e.message);
+                        }
+                    } finally {
+                        backupStatusLoading.value = false;
+                    }
+                };
+
+                const saveBackupSetup = async () => {
+                    const accessKey = (backupForm.value.access_key || '').trim();
+                    const secretKey = (backupForm.value.secret_key || '').trim();
+                    const endpoint = (backupForm.value.endpoint || '').trim();
+                    const sourceDir = ((backupForm.value.source_dir || defaultBackupSourceDir).trim()) || defaultBackupSourceDir;
+                    const remotePath = (backupForm.value.remote_path || '').trim();
+
+                    if (!sourceDir || !remotePath) {
+                        notify('error', '请填写备份源目录与 R2 存储路径');
+                        return;
+                    }
+
+                    if (!backupStatus.value.rclone_configured && (!accessKey || !secretKey || !endpoint)) {
+                        notify('error', '首次配置请完整填写 Cloudflare R2 凭证');
+                        return;
+                    }
+
+                    const payload = {
+                        access_key: accessKey,
+                        secret_key: secretKey,
+                        endpoint,
+                        source_dir: sourceDir,
+                        remote_path: remotePath,
+                        skip_initial_backup: !!skipInitialBackup.value
+                    };
+
+                    if (!secretKey) {
+                        if (accessKey === (backupStatus.value.access_key || '')) {
+                            payload.access_key = '';
+                        }
+                        if (endpoint === (backupStatus.value.endpoint || '')) {
+                            payload.endpoint = '';
+                        }
+                    }
+
+                    const hasPartialCreds = (payload.access_key !== '' || payload.endpoint !== '') && payload.secret_key === '';
+                    if (hasPartialCreds) {
+                        notify('error', '更新 Cloudflare R2 凭证时需同时填写 Access Key、Secret Key 与 Endpoint');
+                        return;
+                    }
+                    if (payload.secret_key && (payload.access_key === '' || payload.endpoint === '')) {
+                        notify('error', '更新 Cloudflare R2 凭证时需同时填写 Access Key、Secret Key 与 Endpoint');
+                        return;
+                    }
+
+                    backupSaving.value = true;
+                    try {
+                        const res = await fetch('/api/v1/backup/setup', withAuth({
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '备份配置已保存');
+                            backupForm.value.secret_key = '';
+                            skipInitialBackup.value = false;
+                            await fetchBackupStatus(false, true);
+                        } else {
+                            notify('error', '配置失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '配置失败: ' + e.message);
+                    } finally {
+                        backupSaving.value = false;
+                    }
+                };
+
+                const runBackupNow = async () => {
+                    if (!backupStatus.value.backup_configured) {
+                        notify('error', '请先完成备份配置');
+                        return;
+                    }
+                    backupRunLoading.value = true;
+                    try {
+                        const res = await fetch('/api/v1/backup/run', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '备份任务已执行');
+                            await fetchBackupStatus(false);
+                        } else {
+                            notify('error', '备份失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '备份失败: ' + e.message);
+                    } finally {
+                        backupRunLoading.value = false;
+                    }
+                };
+
+                const testBackupConnection = async () => {
+                    if (!backupStatus.value.rclone_configured) {
+                        notify('error', '尚未配置 Cloudflare R2 凭证');
+                        return;
+                    }
+                    backupTestLoading.value = true;
+                    try {
+                        const res = await fetch('/api/v1/backup/test', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '连接正常');
+                        } else {
+                            notify('error', '测试失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '测试失败: ' + e.message);
+                    } finally {
+                        backupTestLoading.value = false;
+                    }
+                };
+
+                const restoreBackup = async () => {
+                    if (!backupStatus.value.backup_configured) {
+                        notify('error', '请先完成备份配置');
+                        return;
+                    }
+                    const remote = (restoreForm.value.remote_path || '').trim();
+                    if (!remote && !backupStatus.value.remote_path) {
+                        notify('error', '请填写 Cloudflare R2 存储路径');
+                        return;
+                    }
+                    if (!confirm('恢复操作将覆盖 /etc/nginx 现有配置，是否继续？')) return;
+                    restoreLoading.value = true;
+                    try {
+                        const res = await fetch('/api/v1/backup/restore', withAuth({
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ remote_path: remote })
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '恢复任务完成');
+                            await fetchStatus();
+                        } else {
+                            notify('error', '恢复失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '恢复失败: ' + e.message);
+                    } finally {
+                        restoreLoading.value = false;
+                    }
+                };
+
+                const fetchInstallLogs = async () => {
+                    if (!isAuthenticated.value) return;
+                    try {
+                        const res = await fetch('/api/v1/install/logs', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            const rawLogs = Array.isArray(data.logs)
+                                ? data.logs
+                                : (typeof data.logs === 'string' && data.logs ? [data.logs] : []);
+                            const exitCodeRaw = typeof data.exit_code === 'number'
+                                ? data.exit_code
+                                : parseInt(data.exit_code, 10);
+                            const normalizedExitCode = Number.isFinite(exitCodeRaw)
+                                ? exitCodeRaw
+                                : (installStatus.value.exit_code || 0);
+                            installStatus.value = {
+                                ...installStatus.value,
+                                id: data.id || installStatus.value.id || 'install',
+                                is_running: !!data.is_running,
+                                exit_code: normalizedExitCode,
+                                logs: rawLogs
+                            };
+                            if (!installStatus.value.is_running) {
+                                stopInstallPolling();
+                            }
+                        }
+                    } catch (e) {
+                        notify('error', '获取安装日志失败: ' + e.message);
+                    }
+                };
+
+                const selectSite = (domain) => {
+                    selectedSite.value = domain;
+                };
+
+                const openCreateSiteModal = () => {
+                    isSiteEdit.value = false;
+                    siteForm.value = defaultSite();
+                    backendsText.value = '';
+                    showSiteModal.value = true;
+                };
+
+                const openEditSiteModal = (site) => {
+                    if (!site) return;
+                    isSiteEdit.value = true;
+                    siteForm.value = JSON.parse(JSON.stringify(site));
+                    backendsText.value = (site.backends || []).join('\n');
+                    showSiteModal.value = true;
+                };
+
+                const prepareSitePayload = () => {
+                    const payload = JSON.parse(JSON.stringify(siteForm.value));
+                    payload.domain = (payload.domain || '').trim();
+                    if (!payload.domain) {
+                        notify('error', '域名不能为空');
+                        throw new Error('invalid');
+                    }
+                    if (payload.type === 'lb') {
+                        payload.backends = backendsText.value.split('\n').map(i => i.trim()).filter(Boolean);
+                    } else {
+                        payload.backends = [];
+                    }
+                    payload.backend_port = Number(payload.backend_port) || 0;
+                    if (payload.type !== 'proxy') {
+                        payload.backend_ip = payload.backend_ip || '';
+                        payload.backend_port = payload.backend_port || 0;
+                    }
+                    if (payload.type !== 'redirect') {
+                        payload.target_url = payload.target_url || '';
+                    }
+                    return payload;
+                };
+
+                const saveSite = async () => {
+                    let payload;
+                    try {
+                        payload = prepareSitePayload();
+                    } catch (_) {
+                        return;
+                    }
+                    const method = isSiteEdit.value ? 'PUT' : 'POST';
+                    const url = isSiteEdit.value ? '/api/v1/sites/' + payload.domain : '/api/v1/sites';
+                    try {
+                        const res = await fetch(url, withAuth({
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            showSiteModal.value = false;
+                            await fetchSites();
+                            notify('success', isSiteEdit.value ? '站点更新成功' : '站点创建成功');
+                        } else {
+                            notify('error', '操作失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const deleteSite = async (domain) => {
+                    if (!domain) return;
+                    if (!confirm('确定要删除站点 ' + domain + ' 吗？')) return;
+                    try {
+                        const res = await fetch('/api/v1/sites/' + domain, withAuth({ method: 'DELETE' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', '站点已删除');
+                            await fetchSites();
+                        } else {
+                            notify('error', '删除失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const openRawModal = async () => {
+                    if (!selectedSite.value) return;
+                    showRawModal.value = true;
+                    rawLoading.value = true;
+                    await nextTick();
+                    try {
+                        const res = await fetch('/api/v1/sites/' + selectedSite.value + '/raw', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            showRawModal.value = false;
+                            return;
+                        }
+                        if (res.ok) {
+                            rawContentDraft.value = data.content || '';
+                        } else {
+                            notify('error', '读取配置失败: ' + (data.error || res.statusText));
+                            showRawModal.value = false;
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                        showRawModal.value = false;
+                    } finally {
+                        rawLoading.value = false;
+                    }
+                };
+
+                const saveRaw = async () => {
+                    if (!selectedSite.value) return;
+                    rawLoading.value = true;
+                    await nextTick();
+                    try {
+                        const res = await fetch('/api/v1/sites/' + selectedSite.value + '/raw', withAuth({
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: rawContentDraft.value })
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', '配置已验证并重载成功');
+                            showRawModal.value = false;
+                            await fetchSites();
+                        } else {
+                            notify('error', '保存失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    } finally {
+                        rawLoading.value = false;
+                    }
+                };
+
+                const openCreateStreamModal = () => {
+                    isStreamEdit.value = false;
+                    streamForm.value = defaultStream();
+                    showStreamModal.value = true;
+                };
+
+                const openEditStreamModal = (stream) => {
+                    if (!stream) return;
+                    isStreamEdit.value = true;
+                    streamForm.value = JSON.parse(JSON.stringify(stream));
+                    showStreamModal.value = true;
+                };
+
+                const openStreamRawModal = async (item) => {
+                    const name = typeof item === 'string' ? item : (item?.name || '');
+                    if (!name) return;
+                    showStreamRawModal.value = true;
+                    streamRawLoading.value = true;
+                    streamRawName.value = name;
+                    streamRawContent.value = '';
+                    await nextTick();
+                    try {
+                        const res = await fetch('/api/v1/streams/' + name + '/raw', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            showStreamRawModal.value = false;
+                            return;
+                        }
+                        if (res.ok) {
+                            streamRawContent.value = data.content || '';
+                        } else {
+                            notify('error', '读取配置失败: ' + (data.error || res.statusText));
+                            showStreamRawModal.value = false;
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                        showStreamRawModal.value = false;
+                    } finally {
+                        streamRawLoading.value = false;
+                    }
+                };
+
+                const saveStream = async () => {
+                    const payload = JSON.parse(JSON.stringify(streamForm.value));
+                    payload.name = (payload.name || '').trim();
+                    payload.target = (payload.target || '').trim();
+                    payload.listen_port = Number(payload.listen_port) || 0;
+                    if (!payload.name || !payload.listen_port || !payload.target) {
+                        notify('error', '请完整填写规则名称、端口和目标地址');
+                        return;
+                    }
+                    const method = isStreamEdit.value ? 'PUT' : 'POST';
+                    const url = isStreamEdit.value ? '/api/v1/streams/' + payload.name : '/api/v1/streams';
+                    try {
+                        const res = await fetch(url, withAuth({
+                            method,
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', isStreamEdit.value ? '转发规则已更新' : '转发规则创建成功');
+                            showStreamModal.value = false;
+                            await fetchStreams();
+                        } else {
+                            notify('error', '操作失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const deleteStream = async (name) => {
+                    if (!confirm('确定删除转发规则 ' + name + ' 吗？')) return;
+                    try {
+                        const res = await fetch('/api/v1/streams/' + name, withAuth({ method: 'DELETE' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', '转发规则已删除');
+                            await fetchStreams();
+                        } else {
+                            notify('error', '删除失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const saveStreamRaw = async () => {
+                    if (!streamRawName.value) return;
+                    streamRawLoading.value = true;
+                    await nextTick();
+                    try {
+                        const res = await fetch('/api/v1/streams/' + streamRawName.value + '/raw', withAuth({
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: streamRawContent.value })
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '转发配置已更新');
+                            showStreamRawModal.value = false;
+                            await fetchStreams();
+                        } else {
+                            notify('error', '保存失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    } finally {
+                        streamRawLoading.value = false;
+                    }
+                };
+
+                const reloadNginx = async () => {
+                    try {
+                        const res = await fetch('/api/v1/system/reload', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', '配置验证并重载成功');
+                        } else {
+                            notify('error', '重载失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const backupConfig = async () => {
+                    try {
+                        const res = await fetch('/api/v1/system/backup', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', '备份完成: ' + (data.path || '未知路径'));
+                        } else {
+                            notify('error', '备份失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const restoreLocalBackup = async () => {
+                    const path = '/root/nginx_backups';
+                    try {
+                        const res = await fetch('/api/v1/system/restore', withAuth({
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path })
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', data.message || '恢复成功');
+                            await fetchStatus();
+                        } else {
+                            notify('error', '恢复失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '恢复失败: ' + e.message);
+                    }
+                };
+
+                const confirmUninstall = async () => {
+                    if (!confirm('警告：此操作将彻底清除所有 Nginx 数据！是否继续？')) return;
+                    try {
+                        const res = await fetch('/api/v1/system/uninstall', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            notify('success', 'Nginx 已卸载');
+                            await fetchStatus();
+                        } else {
+                            notify('error', '卸载失败: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const openInstallModal = async () => {
+                    showInstallModal.value = true;
+                    await nextTick();
+                    await fetchInstallLogs();
+                    if (installStatus.value.is_running) {
+                        startInstallPolling();
+                    }
+                };
+
+                const closeInstallModal = () => {
+                    showInstallModal.value = false;
+                };
+
+                const startInstall = async () => {
+                    try {
+                        const res = await fetch('/api/v1/install', withAuth({ method: 'POST' }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.status === 202 || res.status === 200) {
+                            notify('success', '安装任务已启动，请稍候');
+                            await openInstallModal();
+                            startInstallPolling();
+                        } else if (res.status === 409) {
+                            notify('info', '已有安装任务正在运行');
+                            await openInstallModal();
+                            startInstallPolling();
+                        } else {
+                            notify('error', '无法启动安装: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
+                const login = async () => {
+                    loginError.value = '';
+                    const token = (loginToken.value || '').trim();
+                    if (!token) {
+                        loginError.value = '请填写访问令牌';
+                        return;
+                    }
+                    authenticating.value = true;
+                    try {
+                        const res = await fetch('/api/v1/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token })
+                        });
+                        const data = await readJson(res);
+                        if (res.ok) {
+                            apiToken.value = token;
+                            localStorage.setItem('apiToken', token);
+                            tokenExpiresAt.value = data.expires_at || '';
+                            if (tokenExpiresAt.value) {
+                                localStorage.setItem('sessionExpiresAt', tokenExpiresAt.value);
+                            } else {
+                                localStorage.removeItem('sessionExpiresAt');
+                            }
+                            isAuthenticated.value = true;
+                            loginError.value = '';
+                            notify('success', data.new_token ? '已设置登录令牌（24 小时有效）' : '登录成功');
+                            await initializeAfterAuth();
+                        } else {
+                            loginError.value = data.error || res.statusText;
+                            if (res.status === 401 && data.expired) {
+                                loginError.value = data.error || '令牌已过期，请在终端重置';
+                            }
+                        }
+                    } catch (e) {
+                        loginError.value = '网络错误: ' + e.message;
+                    } finally {
+                        authenticating.value = false;
+                    }
+                };
+
+                const validateStoredToken = async () => {
+                    if (!apiToken.value) return;
+                    authenticating.value = true;
+                    try {
+                        const res = await fetch('/api/v1/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ token: apiToken.value })
+                        });
+                        const data = await readJson(res);
+                        if (res.ok) {
+                            isAuthenticated.value = true;
+                            tokenExpiresAt.value = data.expires_at || '';
+                            if (tokenExpiresAt.value) {
+                                localStorage.setItem('sessionExpiresAt', tokenExpiresAt.value);
+                            } else {
+                                localStorage.removeItem('sessionExpiresAt');
+                            }
+                            notify('info', '令牌验证成功，已自动登录');
+                            await initializeAfterAuth();
+                        } else {
+                            localStorage.removeItem('apiToken');
+                            localStorage.removeItem('sessionExpiresAt');
+                            handleUnauthorized(data.error || '令牌验证失败，请重新登录');
+                        }
+                    } catch (e) {
+                        notify('error', '验证令牌失败: ' + e.message);
+                    } finally {
+                        authenticating.value = false;
+                    }
+                };
+
+                const initializeAfterAuth = async () => {
+                    await Promise.all([
+                        fetchStatus(),
+                        fetchSites(),
+                        fetchStreams(),
+                        fetchInstallLogs(),
+                        fetchBackupStatus(true, true),
+                        fetchNotificationSettings()
+                    ]);
+                    startPolling();
+                    if (installStatus.value.is_running) {
+                        startInstallPolling();
+                    }
+                };
+
+                watch(() => installStatus.value?.logs?.length || 0, async () => {
+                    await nextTick();
+                    if (installLogRef.value) {
+                        installLogRef.value.scrollTop = installLogRef.value.scrollHeight;
+                    }
+                });
+
+                onMounted(() => {
+                    if (apiToken.value) {
+                        loginToken.value = apiToken.value;
+                        validateStoredToken();
+                    }
+                });
+
+                return {
+                    currentTab,
+                    status,
+                    siteConfigs,
+                    selectedSite,
+                    showSiteModal,
+                    isSiteEdit,
+                    siteForm,
+                    backendsText,
+                    showRawModal,
+                    rawContentDraft,
+                    rawLoading,
+                    streams,
+                    showStreamModal,
+                    isStreamEdit,
+                    streamForm,
+                    tabTitle,
+                    siteStats,
+                    selectedSiteDetail,
+                    siteTypes,
+                    isAuthenticated,
+                    loginToken,
+                    loginError,
+                    authenticating,
+                    tokenExpiresAt,
+                    sessionExpiryText,
+                    notifications,
+                    noticeStyle,
+                    removeNotification,
+                    siteTypeLabel,
+                    siteTypeDescription,
+                    siteTypeStyle,
+                    installStatus,
+                    showInstallModal,
+                    installProgress,
+                    installStatusText,
+                    installLogRef,
+                    trafficSummary,
+                    selectSite,
+                    openCreateSiteModal,
+                    openEditSiteModal,
+                    saveSite,
+                    deleteSite,
+                    openRawModal,
+                    saveRaw,
+                    openCreateStreamModal,
+                    openEditStreamModal,
+                    saveStream,
+                    deleteStream,
+                    showStreamRawModal,
+                    streamRawName,
+                    streamRawContent,
+                    streamRawLoading,
+                    openStreamRawModal,
+                    saveStreamRaw,
+                    siteLogs,
+                    siteLogsLoading,
+                    todayText,
+                    siteLogsMap,
+                    refreshSiteLogs,
+                    logPreview,
+                    showLogModal,
+                    logModalSite,
+                    logModalContent,
+                    openLogViewer,
+                    copyLog,
+                    closeLogModal,
+                    refreshSingleLog,
+                    backupStatus,
+                    backupStatusLoading,
+                    backupForm,
+                    skipInitialBackup,
+                    backupSaving,
+                    backupRunLoading,
+                    backupTestLoading,
+                    restoreForm,
+                    restoreLoading,
+                    fetchBackupStatus,
+                    saveBackupSetup,
+                    runBackupNow,
+                    testBackupConnection,
+                    restoreBackup,
+                    notificationSettings,
+                    notificationLoading,
+                    notificationSaving,
+                    notificationLastUpdated,
+                    saveNotificationSettings,
+                    reloadNginx,
+                    backupConfig,
+                    restoreLocalBackup,
+                    confirmUninstall,
+                    startInstall,
+                    openInstallModal,
+                    closeInstallModal,
+                    login,
+                    logout
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
