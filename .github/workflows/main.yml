@@ -1,0 +1,57 @@
+name: Build ARM64 Binaries
+
+# 触发条件：当你推送到 main 分支，或者手动点击触发时运行
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch: 
+
+jobs:
+  build:
+    name: Build for Linux ARM64
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 1. 拉取代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Go 环境 (使用较新版本)
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # 3. 编译 nginx-mgr
+      - name: Build nginx-mgr (ARM64)
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: 0 # 通常静态编译设为0，减少依赖
+        run: |
+          echo "Building nginx-mgr..."
+          # 注意：如果 main.go 在根目录，使用 "."
+          # 如果在子目录（例如 cmd/nginx-mgr），请改为 "./cmd/nginx-mgr"
+          go build -v -o nginx-mgr-linux-arm64 . 
+
+      # 4. 编译 tokenctl (假设它也在这个仓库里)
+      - name: Build tokenctl (ARM64)
+        env:
+          GOOS: linux
+          GOARCH: arm64
+          CGO_ENABLED: 0
+        run: |
+          echo "Building tokenctl..."
+          # 请根据实际代码位置修改路径，例如 "./cmd/tokenctl" 或 "./tokenctl"
+          # 如果它是独立项目，删除此步骤；如果在同一仓库，指向其 main.go 所在文件夹
+          go build -v -o tokenctl-linux-arm64 ./cmd/tokenctl
+
+      # 5. 上传构建结果供下载
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ngx-nova-arm64-build
+          path: |
+            nginx-mgr-linux-arm64
+            tokenctl-linux-arm64
+          if-no-files-found: warn
