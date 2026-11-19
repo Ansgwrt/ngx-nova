@@ -51,8 +51,12 @@ PANEL_EXTRACT_DIR=""
 # 二进制安装场景的首选来源：GitHub Release 资产（不需要 docker）
 PANEL_REPO="${PANEL_REPO:-Ansgwrt/ngx-nova}"
 PANEL_RELEASE="${PANEL_RELEASE:-latest}"
-PANEL_BIN="/usr/local/bin/nginx-mgr"
-PANEL_UNIT="nginx-mgr"
+# 面板二进制路径不写死：真实路径由 systemd 单元的 ExecStart 决定。
+# 踩过：单元指向 /opt/nginx-mgr/nginx-mgr，而脚本硬编码 /usr/local/bin/nginx-mgr，
+# 结果替换了一个根本没被使用的文件 —— 服务重启后仍是旧二进制，健康检查还返回 200。
+PANEL_BIN="${PANEL_BIN:-}"
+PANEL_TOKENCTL=""
+PANEL_UNIT="${PANEL_UNIT:-nginx-mgr}"
 PANEL_PORT="${PANEL_PORT:-8083}"
 
 # ---------------------------------------------------------------- 输出与错误
@@ -650,6 +654,117 @@ extract_panel_from_image() {
   return 1
 }
 
+
+# 解析面板二进制真实路径：优先 systemd 单元 ExecStart，其次常见安装位置
+detect_panel_bin() {
+  if [[ -n "$PANEL_BIN" ]]; then
+    log "面板二进制（由环境变量指定）: ${PANEL_BIN}"
+  else
+    local p=""
+    if command -v systemctl >/dev/null 2>&1; then
+      p="$(systemctl show -p ExecStart --value "$PANEL_UNIT" 2>/dev/null \
+           | sed -n 's/.*path=\([^ ;]*\).*/\1/p' | head -1)"
+      if [[ -z "$p" ]]; then
+        p="$(systemctl cat "$PANEL_UNIT" 2>/dev/null | sed -n 's/^ExecStart=//p' | head -1 | awk '{print $1}')"
+      fi
+    fi
+    if [[ -z "$p" ]]; then
+      local cand
+      for cand in /opt/nginx-mgr/nginx-mgr /usr/local/bin/nginx-mgr /usr/bin/nginx-mgr; do
+        if [[ -f "$cand" ]]; then p="$cand"; break; fi
+      done
+    fi
+    PANEL_BIN="${p:-/usr/local/bin/nginx-mgr}"
+    log "面板二进制: ${PANEL_BIN}（解析自单元 ${PANEL_UNIT}）"
+  fi
+
+  # tokenctl 跟随面板同目录，避免又出现"更新了另一个路径"
+  local dir; dir="$(dirname "$PANEL_BIN")"
+  if [[ -f "${dir}/tokenctl" ]]; then
+    PANEL_TOKENCTL="${dir}/tokenctl"
+  elif [[ -f /usr/local/bin/tokenctl ]]; then
+    PANEL_TOKENCTL="/usr/local/bin/tokenctl"
+  fi
+}
+
+# 是否已安装面板二进制（按常见路径探测，不改动 PANEL_BIN）
+panel_present() {
+  local cand
+  for cand in "${PANEL_BIN:-}" /opt/nginx-mgr/nginx-mgr /usr/local/bin/nginx-mgr /usr/bin/nginx-mgr; do
+    if [[ -n "$cand" && -f "$cand" ]]; then return 0; fi
+  done
+  return 1
+}
+
+# 运行中的面板进程是否就是磁盘上这个二进制（inode 相同）。
+# 只验证 HTTP 200 会漏掉"服务重启了但跑的是另一个路径"的情况。
+# 面板主进程 PID。
+# 踩过：`pgrep -f "$(basename ...)"` 会命中命令行里恰好含 "nginx-mgr" 的普通 shell
+# （比如 ssh 里手敲的命令），拿到错误 PID 后误判"跑的不是新二进制"，进而回滚新版本。
+# 优先用 systemd 的 MainPID；退化时按 /proc/<pid>/exe 的真实路径精确匹配。
+panel_pid() {
+  local pid=""
+  if command -v systemctl >/dev/null 2>&1; then
+    pid="$(systemctl show -p MainPID --value "$PANEL_UNIT" 2>/dev/null | tr -d ' ' || true)"
+    [[ "$pid" =~ ^[0-9]+$ && "$pid" -gt 0 ]] || pid=""
+  fi
+  if [[ -z "$pid" ]]; then
+    local want p real
+    want="$(readlink -f "$PANEL_BIN" 2>/dev/null || echo "$PANEL_BIN")"
+    for p in /proc/[0-9]*; do
+      real="$(readlink -f "${p}/exe" 2>/dev/null || true)"
+      real="${real% (deleted)}"
+      if [[ -n "$real" && "$real" == "$want" ]]; then pid="${p#/proc/}"; break; fi
+    done
+  fi
+  echo "$pid"
+}
+
+panel_running_matches() {
+  local i pid a b
+  # 重启瞬间 systemd 可能还报着旧 PID，给它几秒稳定下来
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    pid="$(panel_pid)"
+    if [[ -n "$pid" && -e "/proc/$pid/exe" ]]; then
+      a="$(stat -Lc '%d:%i' "/proc/$pid/exe" 2>/dev/null || true)"
+      b="$(stat -Lc '%d:%i' "$PANEL_BIN" 2>/dev/null || true)"
+      [[ -n "$a" && "$a" == "$b" ]] && return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+# 运行中进程的 exe 路径（便于报错时定位）
+panel_running_exe() {
+  local pid; pid="$(panel_pid)"
+  if [[ -n "$pid" && -e "/proc/$pid/exe" ]]; then
+    readlink -f "/proc/$pid/exe" 2>/dev/null || true
+  fi
+}
+
+# 运行中进程内嵌的构建戳
+panel_running_stamp() {
+  local pid; pid="$(panel_pid)"
+  [[ -n "$pid" && -e "/proc/$pid/exe" ]] || return 0
+  { grep -aoE 'NGXBUILD:[0-9]{8}T[0-9]{6}Z' "/proc/$pid/exe" 2>/dev/null || true; } | head -1 || true
+}
+
+
+# 回滚面板二进制：写临时文件后 rename。
+# 直接 cp 覆盖正在执行的二进制会报 "Text file busy"（实测踩到，回滚会静默失败）。
+rollback_panel() {
+  [[ -f "${BACKUP_DIR}/nginx-mgr.bin" ]] || { warn "无备份可回滚: ${BACKUP_DIR}/nginx-mgr.bin"; return 1; }
+  install -m 0755 "${BACKUP_DIR}/nginx-mgr.bin" "${PANEL_BIN}.rollback" || return 1
+  mv -f "${PANEL_BIN}.rollback" "$PANEL_BIN" || return 1
+  if [[ -f "${BACKUP_DIR}/tokenctl.bin" && -n "$PANEL_TOKENCTL" ]]; then
+    install -m 0755 "${BACKUP_DIR}/tokenctl.bin" "${PANEL_TOKENCTL}.rollback" 2>/dev/null \
+      && mv -f "${PANEL_TOKENCTL}.rollback" "$PANEL_TOKENCTL" || true
+  fi
+  systemctl restart "$PANEL_UNIT" >/dev/null 2>&1 || true
+  warn "已回滚到备份二进制"
+}
+
 # ---------------------------------------------------------------- 面板更新
 
 panel_health() {
@@ -660,6 +775,7 @@ panel_health() {
 
 update_panel() {
   log "=== 更新面板（nginx-mgr）==="
+  detect_panel_bin
   : "${BACKUP_DIR:=${BACKUP_ROOT}/panel-${STAMP}}"
 
   local src="$PANEL_SRC"
@@ -794,11 +910,13 @@ update_panel() {
     ok "旧面板已备份: ${BACKUP_DIR}/nginx-mgr.bin"
   fi
 
-  # tokenctl 与面板同版本，一并更新（存在才动）
-  if [[ -n "$tk" && -f "$tk" ]]; then
-    [[ -f /usr/local/bin/tokenctl ]] && cp -a /usr/local/bin/tokenctl "${BACKUP_DIR}/tokenctl.bin"
-    install -m 0755 "$tk" /usr/local/bin/tokenctl
-    ok "tokenctl 已更新"
+  # tokenctl 与面板同版本、同目录，一并更新（存在才动）
+  if [[ -n "$tk" && -f "$tk" && -n "$PANEL_TOKENCTL" ]]; then
+    if [[ -f "$PANEL_TOKENCTL" ]]; then
+      cp -a "$PANEL_TOKENCTL" "${BACKUP_DIR}/tokenctl.bin"
+    fi
+    install -m 0755 "$tk" "$PANEL_TOKENCTL"
+    ok "tokenctl 已更新: ${PANEL_TOKENCTL}"
   fi
 
   # 原子替换 + 重启
@@ -813,15 +931,26 @@ update_panel() {
     sleep 1
     if panel_health; then
       ok "面板健康检查通过（http://127.0.0.1:${PANEL_PORT}/ui/ → 200）"
+      # 200 只说明"有个进程在服务"，还要确认它跑的就是刚装的文件
+      if ! panel_running_matches; then
+        warn "服务在跑，但运行的二进制不是 ${PANEL_BIN}（/proc/<pid>/exe inode 不一致）"
+        warn "常见原因：单元 ExecStart 指向别的路径，或服务未被 ${PANEL_UNIT} 管理"
+        warn "  运行中的 exe: $(panel_running_exe || echo 未知)"
+        rollback_panel
+        die "面板未真正生效，已回滚。检查：systemctl cat ${PANEL_UNIT} | grep ExecStart"
+      fi
+      local rs; rs="$(panel_running_stamp || true)"
+      if [[ -n "$new_stamp" && -n "$rs" && "$rs" != "$new_stamp" ]]; then
+        warn "运行中的构建戳 ${rs} 与目标 ${new_stamp} 不一致"
+      fi
+      ok "运行态确认: ${PANEL_BIN} 已是新二进制${rs:+（${rs}）}"
       [[ -n "$PANEL_EXTRACT_DIR" ]] && rm -rf "$PANEL_EXTRACT_DIR"
       return 0
     fi
   done
 
   warn "面板启动后健康检查失败，开始回滚"
-  [[ -f "${BACKUP_DIR}/nginx-mgr.bin" ]] && cp -a "${BACKUP_DIR}/nginx-mgr.bin" "$PANEL_BIN"
-  [[ -f "${BACKUP_DIR}/tokenctl.bin" ]] && cp -a "${BACKUP_DIR}/tokenctl.bin" /usr/local/bin/tokenctl
-  systemctl restart "$PANEL_UNIT" 2>/dev/null || true
+  rollback_panel || true
   systemctl --no-pager status "$PANEL_UNIT" 2>&1 | tail -12
   die "面板更新失败，已回滚到旧二进制"
 }
@@ -881,7 +1010,7 @@ main() {
   ok "日志文件: ${LOG}"
 
   # 面板是独立组件，默认不动；不提示的话很容易误以为"升级脚本跑完就全好了"
-  if [[ $PANEL -eq 0 && -f "$PANEL_BIN" ]]; then
+  if [[ $PANEL -eq 0 ]] && panel_present; then
     warn "面板（nginx-mgr）未更新：本次只处理 nginx。"
     warn "如需一并更新面板，重新执行并加上 --panel（从镜像提取，秒级完成）"
   fi

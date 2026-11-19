@@ -589,8 +589,15 @@ func main() {
 	})
 
 	// 5. 静态资源服务
+	// 不用 gin.StaticFS：embed 的 ModTime 是零值，导致响应既没有 Last-Modified 也没有 ETag，
+	// 浏览器与 CDN 只能靠启发式猜测缓存时长 —— 实测出现过"面板已更新但页面还是旧的"。
+	// 这里自己发 ETag + Cache-Control，并把资源指纹拼到 URL 上，从根上避免旧 JS 被复用。
 	subFS, _ := fs.Sub(staticFS, "web/static")
-	r.StaticFS("/ui", http.FS(subFS))
+	initUIAssets(subFS)
+	ui := uiHandler(subFS)
+	r.GET("/ui", func(c *gin.Context) { c.Redirect(http.StatusMovedPermanently, "/ui/") })
+	r.GET("/ui/*filepath", gin.WrapF(ui))
+	r.HEAD("/ui/*filepath", gin.WrapF(ui))
 
 	// 根目录重定向到 UI
 	r.GET("/", func(c *gin.Context) {
