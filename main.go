@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"nginx-mgr/internal/model"
 	"nginx-mgr/internal/service"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,24 +22,43 @@ var staticFS embed.FS
 
 func main() {
 	r := gin.Default()
+	// 面板自身不反代，不信任任何 X-Forwarded-For，避免限流被伪造 IP 绕过。
+	_ = r.SetTrustedProxies(nil)
+	r.Use(securityHeaders())
+	r.Use(bodyLimit(2 << 20)) // 原始配置编辑上限 2MB
 
 	nginxSvc := service.NewNginxService()
+	// 探测 nginx 是否带 brotli / acme 模块，决定站点模板能写哪些指令
+	model.DetectNginxFeatures()
 	siteSvc := service.NewSiteService()
 	streamSvc := service.NewStreamService()
 	notificationSvc := service.NewNotificationService()
 	trafficMgr := service.NewTrafficUsageManager("")
 	systemSvc := service.NewSystemService(notificationSvc, trafficMgr)
 	backupSvc := service.NewBackupService()
-	authPath := filepath.Join(".", "auth_token.json")
+	authPath := strings.TrimSpace(os.Getenv("NGX_AUTH_FILE"))
+	if authPath == "" {
+		authPath = filepath.Join(".", "auth_token.json")
+	}
 	authMgr, err := service.NewAuthManager(authPath)
 	if err != nil {
 		panic(err)
 	}
+	limiter := service.NewLoginLimiter(5, 10*time.Minute)
 
 	notifier := service.NewNotificationDispatcher(notificationSvc, trafficMgr)
 	go notifier.Start(context.Background())
 
 	r.POST("/api/v1/auth/login", func(c *gin.Context) {
+		clientKey := c.ClientIP()
+		if ok, wait := limiter.Allow(clientKey); !ok {
+			c.Header("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": "登录失败次数过多，请稍后再试",
+			})
+			return
+		}
+
 		var req struct {
 			Token string `json:"token"`
 		}
@@ -50,9 +71,14 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "登录令牌不能为空"})
 			return
 		}
+		if len(token) < 8 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "登录令牌至少 8 位"})
+			return
+		}
 
 		expireAt, created, err := authMgr.Login(token)
 		if err != nil {
+			limiter.Fail(clientKey)
 			switch {
 			case errors.Is(err, service.ErrTokenMismatch):
 				c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -61,6 +87,7 @@ func main() {
 			}
 			return
 		}
+		limiter.Reset(clientKey)
 
 		msg := "登录成功"
 		if created {
@@ -79,16 +106,59 @@ func main() {
 
 	// 1. 安装接口
 	apiV1.POST("/install", func(c *gin.Context) {
-		if nginxSvc.InstallStatus.IsRunning {
+		if nginxSvc.Running() {
 			c.JSON(http.StatusConflict, gin.H{"error": "安装任务正在运行中"})
 			return
 		}
-		go nginxSvc.FullInstall(context.Background())
-		c.JSON(http.StatusAccepted, gin.H{"message": "安装任务已启动"})
+		var req struct {
+			Version string `json:"version"`
+		}
+		_ = c.ShouldBindJSON(&req) // 版本可选，缺省走 stable 通道
+		version := strings.TrimSpace(req.Version)
+		go nginxSvc.FullInstall(context.Background(), version)
+		c.JSON(http.StatusAccepted, gin.H{
+			"message": "安装任务已启动",
+			"version": version,
+		})
 	})
 
 	apiV1.GET("/install/logs", func(c *gin.Context) {
 		c.JSON(http.StatusOK, nginxSvc.InstallStatus)
+	})
+
+	// 1.1 版本与漏洞自检
+	apiV1.GET("/system/version", func(c *gin.Context) {
+		c.JSON(http.StatusOK, nginxSvc.VersionReport())
+	})
+
+	apiV1.POST("/system/upgrade", func(c *gin.Context) {
+		if nginxSvc.Running() {
+			c.JSON(http.StatusConflict, gin.H{"error": "已有安装/升级任务在运行"})
+			return
+		}
+		var req struct {
+			Version string `json:"version"`
+			Force   bool   `json:"force"`
+		}
+		_ = c.ShouldBindJSON(&req)
+		version := strings.TrimSpace(req.Version)
+		// 现有 nginx 带第三方模块时，先同步告知，避免任务启动后才在日志里失败
+		if reason := service.DetectThirdPartyModules(); reason != "" && !req.Force {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":  "现有 nginx 编译了第三方模块（" + reason + "），官方源码构建不包含它们",
+				"hint":   "确认覆盖请带 force=true 重试，或使用发行版包管理器升级 nginx",
+				"reason": reason,
+			})
+			return
+		}
+		if version != "" {
+			if !service.IsValidNginxVersion(version) {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "非法的版本号: " + version})
+				return
+			}
+		}
+		go nginxSvc.Upgrade(context.Background(), version, req.Force)
+		c.JSON(http.StatusAccepted, gin.H{"message": "升级任务已启动", "version": version})
 	})
 
 	// 2. 站点管理
@@ -518,7 +588,47 @@ func main() {
 		c.Redirect(http.StatusMovedPermanently, "/ui/")
 	})
 
-	r.Run("0.0.0.0:8083")
+	addr := strings.TrimSpace(os.Getenv("NGX_BIND"))
+	if addr == "" {
+		addr = "0.0.0.0:8083"
+	}
+	if err := r.Run(addr); err != nil {
+		panic(err)
+	}
+}
+
+// securityHeaders 给面板自身补一层响应头，降低被嵌入、被嗅探、被降级的风险。
+func securityHeaders() gin.HandlerFunc {
+	const csp = "default-src 'self'; " +
+		"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.tailwindcss.com; " +
+		"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
+		"font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; " +
+		"img-src 'self' data:; " +
+		"connect-src 'self'; " +
+		"frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+	return func(c *gin.Context) {
+		h := c.Writer.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", csp)
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			h.Set("Cache-Control", "no-store")
+		}
+		c.Next()
+	}
+}
+
+// bodyLimit 限制请求体大小，避免用超大 JSON 把进程内存打满。
+func bodyLimit(maxBytes int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBytes)
+		}
+		c.Next()
+	}
 }
 
 func authMiddleware(authMgr *service.AuthManager) gin.HandlerFunc {

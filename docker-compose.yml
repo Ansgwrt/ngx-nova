@@ -1,0 +1,26 @@
+services:
+  ngx-nova:
+    image: answgrt/ngx-nova:latest
+    # 想直接本地构建就把 image 换成 build: .（arm64/amd64 用 buildx，见 Makefile）
+    container_name: ngx-nova
+    restart: unless-stopped
+    ports:
+      - "8083:8083"   # 面板
+      - "80:80"       # 站点 HTTP（用不到可注释）
+      - "443:443"     # 站点 HTTPS（用不到可注释）
+    environment:
+      NGX_BIND: 0.0.0.0:8083
+      TZ: Asia/Shanghai
+    volumes:
+      - ./data/nginx-conf:/opt/nginx/conf      # 站点与主配置
+      - ./data/logs:/var/log/nginx             # 访问/错误日志
+      - ./data/www:/var/www/html               # 静态站点根目录
+      - ./data/app:/opt/nginx-mgr              # auth_token.json 等面板状态
+    # nginx 需要绑定 80/443 并切换 www-data，容器内以 root 启动
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8083/ui/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

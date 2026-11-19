@@ -16,7 +16,7 @@ type StreamService struct {
 
 func NewStreamService() *StreamService {
 	return &StreamService{
-		ConfDir: model.NginxConfDir,
+		ConfDir: model.ConfDir(),
 	}
 }
 

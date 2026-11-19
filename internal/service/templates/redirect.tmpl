@@ -19,10 +19,14 @@ server {
     http2 on;
     server_name {{.Domain}};
 
-    acme_certificate letsencrypt;
-    ssl_certificate $acme_certificate;
+    {{if .ACME}}acme_certificate letsencrypt;
+    ssl_certificate     $acme_certificate;
     ssl_certificate_key $acme_certificate_key;
-    ssl_certificate_cache max=2;
+    ssl_certificate_cache max=2;{{else}}# 本机 nginx 未编译 ACME 模块，请把证书放到 {{.SSLDir}}/{{.Domain}}.crt 与 {{.SSLDir}}/{{.Domain}}.key
+    ssl_certificate     {{.SSLDir}}/{{.Domain}}.crt;
+    ssl_certificate_key {{.SSLDir}}/{{.Domain}}.key;{{end}}
+
+{{.TLSHardening}}
 
     location / {
         return 301 {{.TargetURL}}$request_uri;

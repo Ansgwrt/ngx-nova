@@ -1,0 +1,16 @@
+# 运行时数据：登录令牌只应存在于服务器本地，禁止入库
+auth_token.json
+*.log
+
+# 构建产物
+dist/
+nginx-mgr
+tokenctl
+nginx-mgr-*
+*.exe
+*.test
+*.tar.gz
+
+# 本地环境
+.env
+.DS_Store

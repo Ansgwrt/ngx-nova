@@ -29,14 +29,58 @@ func NewSystemService(notificationSvc *NotificationService, trafficMgr *TrafficU
 	}
 }
 
+// Reload 先做配置测试，再按环境选择重载方式。
+// 裸机/systemd 用 systemctl；容器或非 systemd 环境退回 nginx -s reload；都没跑起来则直接启动。
+// 这样同一份二进制在 systemd 主机和 Docker 里都能用。
 func (s *SystemService) Reload() error {
-	// 1. 测试配置
-	if _, err := executor.ExecuteSimple(model.NginxSbinPath, "-t"); err != nil {
-		return fmt.Errorf("Nginx 配置测试失败: %v", err)
+	sbin := model.SbinPath()
+	if out, err := executor.ExecuteSimple(sbin, "-t"); err != nil {
+		return fmt.Errorf("Nginx 配置测试失败: %s", strings.TrimSpace(out))
 	}
-	// 2. 重载
-	_, err := executor.ExecuteSimple("systemctl", "reload", "nginx")
-	return err
+
+	if _, err := executor.ExecuteSimple("systemctl", "reload", "nginx"); err == nil {
+		return nil
+	}
+
+	// 2) 无 systemd（容器 / 精简系统）：给 master 进程发 HUP
+	if nginxPid() > 0 {
+		if out, err := executor.ExecuteSimple(sbin, "-s", "reload"); err != nil {
+			return fmt.Errorf("Nginx 重载失败: %s", strings.TrimSpace(out))
+		}
+		return nil
+	}
+
+	// 3) 尚未运行：直接启动
+	if out, err := executor.ExecuteSimple(sbin); err != nil {
+		return fmt.Errorf("Nginx 启动失败: %s", strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// nginxPid 读取 pid 文件并确认进程仍存活，返回 0 表示未运行。
+func nginxPid() int {
+	data, err := os.ReadFile(filepath.Join(model.NginxPidDir, "nginx.pid"))
+	if err != nil {
+		return 0
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); err != nil {
+		return 0
+	}
+	return pid
+}
+
+// NginxActive 判断 nginx 是否在运行，systemd 不可用时退化为 pid 文件判断。
+func NginxActive() bool {
+	if out, err := executor.ExecuteSimple("systemctl", "is-active", "nginx"); err == nil {
+		if strings.TrimSpace(out) == "active" {
+			return true
+		}
+	}
+	return nginxPid() > 0
 }
 
 func (s *SystemService) Backup() (string, error) {
@@ -118,7 +162,7 @@ func (s *SystemService) Restore(backupPath string) error {
 		return fmt.Errorf("恢复失败: %w", err)
 	}
 
-	if _, err := executor.ExecuteSimple(model.NginxSbinPath, "-t"); err != nil {
+	if _, err := executor.ExecuteSimple(model.SbinPath(), "-t"); err != nil {
 		rollbackErr := s.restoreFromBackup(currentBackup)
 		if rollbackErr != nil {
 			return fmt.Errorf("配置验证失败: %v；尝试恢复原配置时出错: %v", err, rollbackErr)
@@ -158,11 +202,14 @@ func (s *SystemService) Uninstall() error {
 func (s *SystemService) GetStatus() (map[string]interface{}, error) {
 	status := make(map[string]interface{})
 
-	out, _ := executor.ExecuteSimple("systemctl", "is-active", "nginx")
-	status["nginx_active"] = (strings.TrimSpace(out) == "active")
+	status["nginx_active"] = NginxActive()
 
-	version, _ := executor.ExecuteSimple(model.NginxSbinPath, "-v")
-	status["nginx_version"] = strings.TrimSpace(version)
+	// 统一成 "nginx/1.30.7" 形式，前端一处显示、便于和公告库比对
+	if version, err := DetectInstalledVersion(); err == nil {
+		status["nginx_version"] = "nginx/" + version
+	} else {
+		status["nginx_version"] = "未安装"
+	}
 	status["network_traffic"] = s.collectNetworkTraffic()
 
 	return status, nil
@@ -227,16 +274,16 @@ func (s *SystemService) applyExtractedArchive(root string) error {
 	altNginxDir := filepath.Join(root, "nginx")
 
 	if dirExists(etcDir) {
-		tasks = append(tasks, copyTask{src: etcDir, dest: model.NginxConfDir})
+		tasks = append(tasks, copyTask{src: etcDir, dest: model.ConfDir()})
 	}
 	if dirExists(varDir) {
 		tasks = append(tasks, copyTask{src: varDir, dest: "/var/www/html"})
 	}
 	if dirExists(altNginxDir) && !dirExists(etcDir) {
-		tasks = append(tasks, copyTask{src: altNginxDir, dest: model.NginxConfDir})
+		tasks = append(tasks, copyTask{src: altNginxDir, dest: model.ConfDir()})
 	}
 	if len(tasks) == 0 {
-		tasks = append(tasks, copyTask{src: root, dest: model.NginxConfDir})
+		tasks = append(tasks, copyTask{src: root, dest: model.ConfDir()})
 	}
 
 	for _, task := range tasks {

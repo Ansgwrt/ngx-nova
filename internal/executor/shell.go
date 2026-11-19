@@ -31,8 +31,16 @@ func (s *TaskStatus) GetLogs() []string {
 
 // ExecuteCommand 执行命令并实时记录日志
 func ExecuteCommand(ctx context.Context, status *TaskStatus, name string, args ...string) error {
+	return ExecuteCommandIn(ctx, status, "", name, args...)
+}
+
+// ExecuteCommandIn 与 ExecuteCommand 相同，但可以指定工作目录（源码编译必须在源码树下执行）。
+func ExecuteCommandIn(ctx context.Context, status *TaskStatus, dir string, name string, args ...string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
-	
+	if dir != "" {
+		cmd.Dir = dir
+	}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

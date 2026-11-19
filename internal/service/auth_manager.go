@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -92,6 +93,11 @@ func (m *AuthManager) hash(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// sameHash 用常数时间比较摘要，避免通过响应时间差逐字节猜令牌。
+func sameHash(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
+
 func (m *AuthManager) IsSet() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -121,7 +127,7 @@ func (m *AuthManager) Login(token string) (time.Time, bool, error) {
 	if m.tokenHash == "" {
 		m.tokenHash = targetHash
 		created = true
-	} else if targetHash != m.tokenHash {
+	} else if !sameHash(targetHash, m.tokenHash) {
 		return time.Time{}, false, ErrTokenMismatch
 	}
 
@@ -160,7 +166,7 @@ func (m *AuthManager) Validate(token string) error {
 		return ErrTokenExpired
 	}
 
-	if m.hash(token) != m.tokenHash {
+	if !sameHash(m.hash(token), m.tokenHash) {
 		return ErrTokenMismatch
 	}
 	return nil

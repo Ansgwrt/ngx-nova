@@ -1,0 +1,10 @@
+.git
+.github
+dist
+data
+*.log
+auth_token.json
+nginx-mgr
+tokenctl
+*.exe
+README.md

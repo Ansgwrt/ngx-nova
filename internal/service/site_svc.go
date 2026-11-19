@@ -19,7 +19,7 @@ type SiteService struct {
 
 func NewSiteService() *SiteService {
 	return &SiteService{
-		ConfDir: model.NginxConfDir,
+		ConfDir: model.ConfDir(),
 	}
 }
 

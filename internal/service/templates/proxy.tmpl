@@ -30,10 +30,14 @@ server {
     access_log /var/log/nginx/{{.Domain}}-access.log main buffer=64k flush=10s;
     error_log /var/log/nginx/{{.Domain}}-error.log warn;
 
-    acme_certificate letsencrypt;
-    ssl_certificate $acme_certificate;
+    {{if .ACME}}acme_certificate letsencrypt;
+    ssl_certificate     $acme_certificate;
     ssl_certificate_key $acme_certificate_key;
-    ssl_certificate_cache max=2;
+    ssl_certificate_cache max=2;{{else}}# 本机 nginx 未编译 ACME 模块，请把证书放到 {{.SSLDir}}/{{.Domain}}.crt 与 {{.SSLDir}}/{{.Domain}}.key
+    ssl_certificate     {{.SSLDir}}/{{.Domain}}.crt;
+    ssl_certificate_key {{.SSLDir}}/{{.Domain}}.key;{{end}}
+
+{{.TLSHardening}}
 
     gzip on;
     gzip_min_length 1024;
@@ -42,11 +46,12 @@ server {
               application/json application/javascript application/xml
               application/rss+xml image/svg+xml;
 
-    brotli on;
+    {{if .Brotli}}    brotli on;
     brotli_comp_level 6;
     brotli_types text/plain text/css text/xml text/javascript
                  application/json application/javascript application/xml
                  application/rss+xml image/svg+xml;
+    {{end}}
 
     # ===== 静态资源 =====
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|bmp|swf|eot|svg|ttf|woff|woff2|webp)$ {

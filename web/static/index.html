@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Nginx Manager Pro</title>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -49,12 +52,52 @@
         ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 10px; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+
+        /* ===== 移动端适配 ===== */
+        html, body { height: 100%; }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            text-rendering: optimizeLegibility;
+        }
+        /* iOS 输入框字号小于 16px 会自动放大页面 */
+        input, select, textarea { font-size: 16px; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+        .drawer { transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1); will-change: transform; }
+        .drawer-backdrop { transition: opacity 0.24s ease; }
+        /* 底部导航：仅手机显示 */
+        .mobile-tabbar { display: none; }
+        @media (max-width: 767px) {
+            .mobile-tabbar {
+                display: flex;
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 40;
+                background: rgba(15, 23, 42, 0.92);
+                backdrop-filter: blur(18px);
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .modal-panel {
+                max-height: 92dvh;
+                border-bottom-left-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+            }
+            /* 移动端隐藏滚动条，减少视觉噪音 */
+            .scroll-thin::-webkit-scrollbar { width: 0; height: 0; }
+        }
+        @media (hover: none) {
+            /* 触摸设备的点击目标不小于 44px */
+            .tap-target { min-height: 44px; }
+        }
+        .break-anywhere { word-break: break-word; overflow-wrap: anywhere; }
     </style>
 </head>
-<body class="min-h-screen overflow-hidden">
-    <div id="app" v-cloak class="relative min-h-screen">
+<body class="min-h-screen overflow-x-hidden">
+    <div id="app" v-cloak class="relative min-h-[100dvh]">
         <!-- Toast Notifications -->
-        <div class="fixed top-6 right-6 z-[70] space-y-3 w-72">
+        <div class="fixed top-3 left-3 right-3 z-[70] space-y-2 md:top-6 md:right-6 md:left-auto md:w-72 safe-top">
             <div v-for="notice in notifications" :key="notice.id"
                  :class="['glass px-4 py-3 rounded-2xl border flex items-start justify-between text-sm', noticeStyle(notice.type)]">
                 <span class="pr-4 leading-relaxed">{{ notice.message }}</span>
@@ -65,33 +108,33 @@
         </div>
 
         <!-- Login Overlay -->
-        <div v-if="!isAuthenticated" class="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-6">
-            <div class="glass rounded-3xl w-full max-w-md border border-white/10 shadow-2xl">
-                <div class="px-8 py-6 border-b border-white/10 space-y-3">
-                    <h2 class="text-2xl font-bold text-white flex items-center justify-center space-x-3 text-center">
+        <div v-if="!isAuthenticated" class="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md p-4 md:p-6">
+            <div class="glass rounded-3xl w-full max-w-md border border-white/10 shadow-2xl max-h-[92dvh] overflow-y-auto">
+                <div class="px-5 py-5 md:px-8 md:py-6 border-b border-white/10 space-y-3">
+                    <h2 class="text-xl md:text-2xl font-bold text-white flex items-center justify-center space-x-3 text-center">
                         <i class="fas fa-lock text-blue-400"></i><span>登录 Nginx Manager</span>
                     </h2>
                     <p class="text-sm text-gray-500">请输入访问令牌以继续操作。若无令牌，请联系系统管理员。</p>
                     <p class="text-xs text-gray-500 leading-relaxed bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-center">
                         <i class="fas fa-terminal text-blue-300 mr-2"></i>
                         首次登录或需要修改令牌时，请在服务器终端执行<br>
-                        <code class="font-mono text-emerald-300 block text-center">tokenctl --set "YOUR_TOKEN" --file /opt/nginx-mgr/auth_token.json</code>
+                        <code class="font-mono text-emerald-300 block text-center break-anywhere mt-1">tokenctl --set "YOUR_TOKEN" --file /opt/nginx-mgr/auth_token.json</code>
                         <br>会话有效期为 24 小时，到期后在此页面重新登录即可继续使用。
                     </p>
                 </div>
-                <div class="px-8 py-6 space-y-4">
+                <div class="px-5 py-5 md:px-8 md:py-6 space-y-4">
                     <div class="space-y-2">
                         <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">访问令牌</label>
-                        <input v-model="loginToken" type="password" placeholder="Bearer Token"
+                        <input v-model="loginToken" type="password" placeholder="Bearer Token" autocomplete="current-password"
                                class="w-full bg-slate-900/70 border border-white/10 rounded-xl px-5 py-4 text-white outline-none focus:ring-2 focus:ring-blue-400/60 font-mono">
                     </div>
                     <p v-if="loginError" class="text-xs text-red-300 bg-red-500/10 border border-red-400/30 rounded-xl px-4 py-2">
                         <i class="fas fa-circle-exclamation mr-2"></i>{{ loginError }}
                     </p>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-3">
+                <div class="px-5 py-5 md:px-8 md:py-6 bg-white/5 flex justify-end safe-bottom">
                     <button @click="login" :disabled="authenticating"
-                            class="btn-primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-50">
+                            class="btn-primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg flex items-center justify-center space-x-2 disabled:opacity-50 w-full md:w-auto">
                         <i class="fas fa-right-to-bracket"></i>
                         <span>{{ authenticating ? '验证中...' : '登录' }}</span>
                     </button>
@@ -99,46 +142,39 @@
             </div>
         </div>
 
-        <div class="flex h-screen">
-            <!-- Sidebar -->
-            <aside class="w-64 glass border-r border-white/10 flex flex-col">
-                <div class="p-8 flex items-center space-x-3">
-                    <div class="w-10 h-10 btn-primary rounded-xl flex items-center justify-center shadow-lg">
-                        <i class="fas fa-bolt text-white text-xl"></i>
+        <div class="flex h-[100dvh] overflow-hidden">
+            <!-- 移动端抽屉遮罩 -->
+            <div v-if="mobileNavOpen" @click="mobileNavOpen = false"
+                 class="drawer-backdrop fixed inset-0 bg-black/60 z-40 md:hidden"></div>
+
+            <!-- Sidebar（桌面固定 / 手机抽屉） -->
+            <aside :class="['drawer glass border-r border-white/10 flex flex-col fixed inset-y-0 left-0 z-50 w-72 max-w-[84vw] md:static md:z-auto md:w-64 md:translate-x-0',
+                            mobileNavOpen ? 'translate-x-0' : '-translate-x-full']">
+                <div class="p-5 md:p-8 flex items-center justify-between safe-top">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-10 h-10 btn-primary rounded-xl flex items-center justify-center shadow-lg">
+                            <i class="fas fa-bolt text-white text-xl"></i>
+                        </div>
+                        <span class="text-xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+                            NGX NOVA
+                        </span>
                     </div>
-                    <span class="text-xl font-bold tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-                        NGX NOVA
-                    </span>
+                    <button @click="mobileNavOpen = false" class="md:hidden w-9 h-9 rounded-full glass border border-white/10 text-gray-400 flex items-center justify-center">
+                        <i class="fas fa-times"></i>
+                    </button>
                 </div>
 
-                <nav class="flex-grow mt-4 px-4 space-y-2">
-                    <button @click="currentTab = 'dashboard'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'dashboard' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-gauge w-5"></i>
-                        <span class="font-medium">控制中心</span>
-                    </button>
-                    <button @click="currentTab = 'sites'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'sites' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-globe w-5"></i>
-                        <span class="font-medium">站点管理</span>
-                    </button>
-                    <button @click="currentTab = 'streams'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'streams' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-network-wired w-5"></i>
-                        <span class="font-medium">端口转发</span>
-                    </button>
-                    <button @click="currentTab = 'logs'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'logs' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-scroll w-5"></i>
-                        <span class="font-medium">日志中心</span>
-                    </button>
-                    <button @click="currentTab = 'notifications'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'notifications' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-bell w-5"></i>
-                        <span class="font-medium">通知设置</span>
-                    </button>
-                    <button @click="currentTab = 'backup'" :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item', currentTab === 'backup' ? 'active' : 'text-gray-400 hover:bg-white/5']">
-                        <i class="fas fa-cloud w-5"></i>
-                        <span class="font-medium">备份恢复</span>
+                <nav class="flex-grow mt-2 md:mt-4 px-3 md:px-4 space-y-1.5 md:space-y-2 overflow-y-auto scroll-thin">
+                    <button v-for="item in navItems" :key="item.id" @click="selectTab(item.id)"
+                            :class="['w-full flex items-center space-x-3 px-4 py-3 rounded-xl nav-item tap-target', currentTab === item.id ? 'active' : 'text-gray-400 hover:bg-white/5']">
+                        <i :class="['fas', item.icon, 'w-5 text-center']"></i>
+                        <span class="font-medium">{{ item.label }}</span>
+                        <span v-if="item.id === 'dashboard' && versionReport && versionReport.vulnerable"
+                              class="ml-auto w-2 h-2 rounded-full bg-red-500" title="存在待修复的安全公告"></span>
                     </button>
                 </nav>
 
-                <div class="p-6 border-t border-white/5">
+                <div class="p-4 md:p-6 border-t border-white/5 safe-bottom">
                     <div class="flex items-center space-x-3 text-xs text-gray-500">
                         <div class="w-2 h-2 rounded-full" :class="status.nginx_active ? 'bg-green-500 animate-pulse' : 'bg-red-500'"></div>
                         <span>{{ status.nginx_active ? 'SYSTEM ONLINE' : 'SYSTEM OFFLINE' }}</span>
@@ -147,30 +183,37 @@
             </aside>
 
             <!-- Main Content -->
-            <main class="flex-grow overflow-y-auto p-8 space-y-6 relative">
-                <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <h1 class="text-3xl font-bold text-white mb-1">{{ tabTitle }}</h1>
-                        <p class="text-gray-500 text-sm">实时运维与自动化管理中心</p>
+            <main class="flex-grow overflow-y-auto p-4 pb-28 md:p-8 md:pb-8 space-y-5 md:space-y-6 relative">
+                <header class="flex items-start justify-between gap-3">
+                    <div class="flex items-start gap-3 min-w-0">
+                        <button @click="mobileNavOpen = true" aria-label="打开菜单"
+                                class="md:hidden shrink-0 w-10 h-10 mt-0.5 glass border border-white/10 rounded-xl text-gray-300 flex items-center justify-center">
+                            <i class="fas fa-bars"></i>
+                        </button>
+                        <div class="min-w-0">
+                            <h1 class="text-xl md:text-3xl font-bold text-white mb-1 truncate">{{ tabTitle }}</h1>
+                            <p class="text-gray-500 text-xs md:text-sm truncate">实时运维与自动化管理中心</p>
+                        </div>
                     </div>
-                    <div class="flex items-center space-x-4">
-                        <div class="glass px-4 py-2 rounded-full flex items-center space-x-3 border border-white/5">
-                            <span class="text-xs font-mono text-gray-400">{{ status.nginx_version || '未知版本' }}</span>
-                            <div class="w-px h-4 bg-white/10"></div>
-                            <span class="text-xs font-bold" :class="status.nginx_active ? 'text-green-400' : 'text-red-400'">
+                    <div class="flex items-center space-x-2 md:space-x-4 shrink-0">
+                        <div class="glass px-3 md:px-4 py-2 rounded-full flex items-center space-x-2 md:space-x-3 border border-white/5">
+                            <span class="text-[11px] md:text-xs font-mono text-gray-400">{{ status.nginx_version || '未知版本' }}</span>
+                            <div class="hidden md:block w-px h-4 bg-white/10"></div>
+                            <span class="hidden md:inline text-xs font-bold" :class="status.nginx_active ? 'text-green-400' : 'text-red-400'">
                                 {{ status.nginx_active ? 'ACTIVE' : 'STOPPED' }}
                             </span>
+                            <span class="md:hidden w-2 h-2 rounded-full" :class="status.nginx_active ? 'bg-green-500' : 'bg-red-500'"></span>
                         </div>
-                        <div v-if="sessionExpiryText" class="hidden md:block text-[11px] text-gray-500 text-right">
+                        <div v-if="sessionExpiryText" class="hidden lg:block text-[11px] text-gray-500 text-right">
                             会话到期：{{ sessionExpiryText }}
                         </div>
-                        <button @click="logout" class="glass px-4 py-2 rounded-full flex items-center space-x-2 border border-white/10 text-xs text-gray-300 hover:text-white transition">
+                        <button @click="logout" aria-label="退出登录" class="glass px-3 md:px-4 py-2 rounded-full flex items-center space-x-2 border border-white/10 text-xs text-gray-300 hover:text-white transition">
                             <i class="fas fa-sign-out-alt text-red-300"></i>
-                            <span>退出</span>
+                            <span class="hidden md:inline">退出</span>
                         </button>
                     </div>
                 </header>
-                <div v-if="sessionExpiryText" class="md:hidden text-[11px] text-gray-500">会话到期：{{ sessionExpiryText }}</div>
+                <div v-if="sessionExpiryText" class="md:hidden text-[11px] text-gray-500 -mt-2">会话到期：{{ sessionExpiryText }}</div>
 
                 <!-- Dashboard -->
                 <section v-if="currentTab === 'dashboard'" class="space-y-6 animate-fadeIn">
@@ -232,6 +275,49 @@
                         </div>
                     </div>
 
+                    <!-- 版本与安全自检 -->
+                    <div :class="['glass rounded-3xl p-5 md:p-6 border', versionReport.vulnerable ? 'border-red-400/40' : 'border-white/10']">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div class="flex items-center space-x-3">
+                                <div class="w-10 h-10 rounded-xl flex items-center justify-center border"
+                                     :class="versionBadge.bg">
+                                    <i :class="['fas', versionBadge.icon]"></i>
+                                </div>
+                                <div>
+                                    <div class="text-[11px] text-gray-400 uppercase tracking-widest">版本与安全</div>
+                                    <div class="text-white font-bold font-mono text-sm md:text-base">{{ versionReport.installed || '未检测到 Nginx' }}</div>
+                                </div>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="px-3 py-1 rounded-full text-[11px] font-semibold border" :class="versionBadge.chip">
+                                    {{ versionBadge.label }}
+                                </span>
+                                <button @click="showVersionModal = true" class="glass border border-white/10 px-3 py-1.5 rounded-xl text-xs text-gray-200 tap-target">
+                                    公告详情
+                                </button>
+                                <button @click="upgradeNginx" :disabled="installStatus.is_running"
+                                        class="btn-primary text-white px-4 py-1.5 rounded-xl text-xs font-bold disabled:opacity-50 tap-target">
+                                    <i class="fas fa-shield-halved mr-1.5"></i>{{ versionReport.vulnerable ? '一键修复升级' : '升级到最新' }}
+                                </button>
+                            </div>
+                        </div>
+                        <p class="mt-3 text-xs leading-relaxed break-anywhere" :class="versionReport.vulnerable ? 'text-red-200' : 'text-gray-400'">
+                            {{ versionReport.summary || '正在读取本机 Nginx 版本…' }}
+                        </p>
+                        <div v-if="versionReport.affected && versionReport.affected.length" class="mt-3 flex flex-wrap gap-1.5">
+                            <span v-for="adv in versionReport.affected.slice(0, 5)" :key="adv.cve"
+                                  class="px-2 py-1 rounded-lg bg-red-500/10 border border-red-400/30 text-[10px] text-red-200 font-mono">
+                                {{ adv.cve }}
+                            </span>
+                            <span v-if="versionReport.affected.length > 5" class="px-2 py-1 text-[10px] text-gray-400">
+                                +{{ versionReport.affected.length - 5 }} 条
+                            </span>
+                        </div>
+                        <div v-else class="mt-3 text-[11px] text-gray-500">
+                            已比对 {{ advisoryCount }} 条官方公告 · 建议版本 <span class="font-mono text-gray-300">{{ versionReport.upgrade_to || '—' }}</span>
+                        </div>
+                    </div>
+
                     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         <div class="lg:col-span-2 space-y-6">
                             <div class="glass rounded-3xl p-6">
@@ -241,34 +327,56 @@
                                     </h3>
                                     <button @click="currentTab = 'sites'" class="text-xs text-blue-300 hover:text-blue-200 transition">前往站点管理</button>
                                 </div>
-                                <div v-if="siteConfigs.length" class="overflow-hidden rounded-2xl border border-white/5">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
-                                            <tr>
-                                                <th class="px-4 py-3 text-left">域名</th>
-                                                <th class="px-4 py-3 text-left">类型</th>
-                                                <th class="px-4 py-3 text-left">后端</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody class="divide-y divide-white/5">
-                                            <tr v-for="site in siteConfigs.slice(0,6)" :key="site.domain" class="hover:bg-white/5 transition">
-                                                <td class="px-4 py-3 font-mono text-sm text-white">{{ site.domain }}</td>
-                                                <td class="px-4 py-3">
-                                                    <span class="px-3 py-1 rounded-full text-xs font-semibold border" :class="siteTypeStyle(site.type)">
-                                                        {{ siteTypeLabel(site.type) }}
-                                                    </span>
-                                                </td>
-                                                <td class="px-4 py-3 text-gray-300">
-                                                    <span v-if="site.type === 'proxy'">{{ site.backend_ip }}:{{ site.backend_port }}</span>
-                                                    <span v-else-if="site.type === 'lb'">{{ site.backends.length }} 个节点</span>
-                                                    <span v-else-if="site.type === 'redirect'">{{ site.target_url }}</span>
-                                                    <span v-else>静态资源</span>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div v-else class="p-10 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl">
+                                <template v-if="siteConfigs.length">
+                                    <div class="hidden md:block overflow-hidden rounded-2xl border border-white/5">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
+                                                <tr>
+                                                    <th class="px-4 py-3 text-left">域名</th>
+                                                    <th class="px-4 py-3 text-left">类型</th>
+                                                    <th class="px-4 py-3 text-left">后端</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-white/5">
+                                                <tr v-for="site in siteConfigs.slice(0,6)" :key="site.domain" class="hover:bg-white/5 transition">
+                                                    <td class="px-4 py-3 font-mono text-sm text-white">{{ site.domain }}</td>
+                                                    <td class="px-4 py-3">
+                                                        <span class="px-3 py-1 rounded-full text-xs font-semibold border" :class="siteTypeStyle(site.type)">
+                                                            {{ siteTypeLabel(site.type) }}
+                                                        </span>
+                                                    </td>
+                                                    <td class="px-4 py-3 text-gray-300">
+                                                        <span v-if="site.type === 'proxy'">{{ site.backend_ip }}:{{ site.backend_port }}</span>
+                                                        <span v-else-if="site.type === 'lb'">{{ site.backends.length }} 个节点</span>
+                                                        <span v-else-if="site.type === 'redirect'">{{ site.target_url }}</span>
+                                                        <span v-else>静态资源</span>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <!-- 手机端：表格转卡片 -->
+                                    <div class="md:hidden space-y-2">
+                                        <div v-for="site in siteConfigs.slice(0,6)" :key="site.domain"
+                                             class="glass border border-white/5 rounded-2xl px-4 py-3">
+                                            <div class="flex items-start justify-between gap-2">
+                                                <div class="min-w-0">
+                                                    <div class="text-white font-mono text-sm break-anywhere">{{ site.domain }}</div>
+                                                    <div class="text-[11px] text-gray-500 mt-1 break-anywhere">
+                                                        <span v-if="site.type === 'proxy'">{{ site.backend_ip }}:{{ site.backend_port }}</span>
+                                                        <span v-else-if="site.type === 'lb'">{{ site.backends.length }} 个节点</span>
+                                                        <span v-else-if="site.type === 'redirect'">{{ site.target_url }}</span>
+                                                        <span v-else>静态资源</span>
+                                                    </div>
+                                                </div>
+                                                <span class="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold border" :class="siteTypeStyle(site.type)">
+                                                    {{ siteTypeLabel(site.type) }}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div v-else class="p-8 md:p-10 text-center text-gray-500 border border-dashed border-white/10 rounded-2xl text-sm">
                                     没有发现站点配置，点击右上角“站点管理”开始部署。
                                 </div>
                             </div>
@@ -335,7 +443,7 @@
                                 <h3 class="text-lg font-semibold text-white">站点列表</h3>
                                 <span class="text-xs text-gray-500 uppercase">总计 {{ siteConfigs.length }}</span>
                             </div>
-                            <div class="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                            <div class="space-y-2 max-h-[42vh] md:max-h-[520px] overflow-y-auto pr-1 scroll-thin">
                                 <button v-for="site in siteConfigs" :key="site.domain" @click="selectSite(site.domain)"
                                     :class="['w-full glass border px-4 py-3 rounded-2xl text-left transition-all', selectedSite === site.domain ? 'border-blue-400/60 bg-blue-500/10 shadow-lg' : 'border-white/5 hover:bg-white/5']">
                                     <div class="flex items-center justify-between">
@@ -443,32 +551,56 @@
                         </button>
                     </div>
 
-                    <div class="glass rounded-3xl p-6 border border-white/5">
-                        <div v-if="streams.length" class="overflow-x-auto">
-                            <table class="min-w-full text-sm">
-                                <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
-                                    <tr>
-                                        <th class="px-4 py-3 text-left">名称</th>
-                                        <th class="px-4 py-3 text-left">监听端口</th>
-                                        <th class="px-4 py-3 text-left">目标地址</th>
-                                        <th class="px-4 py-3 text-right">操作</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-white/5">
-                                    <tr v-for="stream in streams" :key="stream.name" class="hover:bg-white/5 transition">
-                                        <td class="px-4 py-3 font-semibold text-white">{{ stream.name }}</td>
-                                        <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.listen_port }}</td>
-                                        <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.target }}</td>
-                                        <td class="px-4 py-3 text-right space-x-3">
-                                            <button @click="openEditStreamModal(stream)" class="text-blue-300 hover:text-blue-200 text-xs transition">编辑</button>
-                                            <button @click="openStreamRawModal(stream)" class="text-emerald-300 hover:text-emerald-200 text-xs transition">手动编辑</button>
-                                            <button @click="deleteStream(stream.name)" class="text-red-300 hover:text-red-200 text-xs transition">删除</button>
-                                        </td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        <div v-else class="text-gray-500 text-sm text-center py-16 border border-dashed border-white/10 rounded-2xl">
+                    <div class="glass rounded-3xl p-4 md:p-6 border border-white/5">
+                        <template v-if="streams.length">
+                            <div class="hidden md:block overflow-x-auto">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-white/5 text-gray-400 uppercase tracking-widest text-xs">
+                                        <tr>
+                                            <th class="px-4 py-3 text-left">名称</th>
+                                            <th class="px-4 py-3 text-left">监听端口</th>
+                                            <th class="px-4 py-3 text-left">目标地址</th>
+                                            <th class="px-4 py-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-white/5">
+                                        <tr v-for="stream in streams" :key="stream.name" class="hover:bg-white/5 transition">
+                                            <td class="px-4 py-3 font-semibold text-white">{{ stream.name }}</td>
+                                            <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.listen_port }}</td>
+                                            <td class="px-4 py-3 text-gray-300 font-mono">{{ stream.target }}</td>
+                                            <td class="px-4 py-3 text-right space-x-3">
+                                                <button @click="openEditStreamModal(stream)" class="text-blue-300 hover:text-blue-200 text-xs transition">编辑</button>
+                                                <button @click="openStreamRawModal(stream)" class="text-emerald-300 hover:text-emerald-200 text-xs transition">手动编辑</button>
+                                                <button @click="deleteStream(stream.name)" class="text-red-300 hover:text-red-200 text-xs transition">删除</button>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <!-- 手机端：表格转卡片 -->
+                            <div class="md:hidden space-y-3">
+                                <div v-for="stream in streams" :key="stream.name"
+                                     class="glass border border-white/5 rounded-2xl p-4 space-y-3">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0">
+                                            <div class="text-white font-semibold text-sm break-anywhere">{{ stream.name }}</div>
+                                            <div class="text-[11px] text-gray-500 mt-1 font-mono break-anywhere">
+                                                {{ stream.listen_port }} → {{ stream.target }}
+                                            </div>
+                                        </div>
+                                        <span class="shrink-0 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-cyan-500/10 text-cyan-300 border border-cyan-400/30">
+                                            {{ stream.listen_port }}
+                                        </span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-2">
+                                        <button @click="openEditStreamModal(stream)" class="tap-target glass border border-white/10 rounded-xl text-xs text-blue-200">编辑</button>
+                                        <button @click="openStreamRawModal(stream)" class="tap-target glass border border-white/10 rounded-xl text-xs text-emerald-200">配置</button>
+                                        <button @click="deleteStream(stream.name)" class="tap-target glass border border-white/10 rounded-xl text-xs text-red-200">删除</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                        <div v-else class="text-gray-500 text-sm text-center py-12 md:py-16 border border-dashed border-white/10 rounded-2xl">
                             暂无端口转发规则，点击右上角“新增转发”添加第一条规则。
                         </div>
                     </div>
@@ -838,16 +970,30 @@
                     </div>
                 </section>
             </main>
+
+            <!-- 手机端底部导航 -->
+            <nav class="mobile-tabbar safe-bottom">
+                <button v-for="item in mobileTabs" :key="item.id" @click="onMobileTab(item)"
+                        :class="['flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] transition',
+                                 currentTab === item.id ? 'text-blue-300' : 'text-gray-500']">
+                    <span class="relative">
+                        <i :class="['fas', item.icon, 'text-base']"></i>
+                        <span v-if="item.id === 'more' && versionReport.vulnerable"
+                              class="absolute -top-0.5 -right-1.5 w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                    </span>
+                    <span>{{ item.label }}</span>
+                </button>
+            </nav>
         </div>
 
         <!-- Modal: Create/Edit Site -->
-        <div v-if="showSiteModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div class="glass rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white">{{ isSiteEdit ? '编辑站点' : '新增站点' }}</h3>
-                    <button @click="showSiteModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+        <div v-if="showSiteModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white">{{ isSiteEdit ? '编辑站点' : '新增站点' }}</h3>
+                    <button @click="showSiteModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+                <div class="p-5 md:p-8 space-y-5 md:space-y-6 overflow-y-auto flex-1">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div class="space-y-2">
                             <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">访问域名</label>
@@ -892,7 +1038,7 @@
                         <i class="fas fa-info-circle mr-2"></i>静态资源将存放在 <code>/var/www/html/{{ siteForm.domain || 'your-domain' }}</code>
                     </div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex justify-end gap-3 md:gap-4 shrink-0 safe-bottom">
                     <button @click="showSiteModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
                     <button @click="saveSite" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg">
                         {{ isSiteEdit ? '保存修改' : '确认创建' }}
@@ -902,24 +1048,24 @@
         </div>
 
         <!-- Modal: Manual Raw Edit -->
-        <div v-if="showRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
-                        <i class="fas fa-code text-emerald-300"></i><span>手动编辑配置 - {{ selectedSite }}</span>
+        <div v-if="showRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3 min-w-0">
+                        <i class="fas fa-code text-emerald-300"></i><span class="truncate">手动编辑配置 - {{ selectedSite }}</span>
                     </h3>
-                    <button @click="showRawModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                    <button @click="showRawModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2 shrink-0"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-6 space-y-3">
+                <div class="p-4 md:p-6 space-y-3 overflow-y-auto flex-1">
                     <div class="text-xs text-gray-500 flex items-center space-x-2">
                         <i class="fas fa-circle-info text-blue-300"></i>
                         <span>提交后自动执行 <code class="font-mono text-emerald-300">nginx -t</code> & <code class="font-mono text-emerald-300">systemctl reload nginx</code>，失败将回滚。</span>
                     </div>
-                    <textarea v-model="rawContentDraft" :disabled="rawLoading" rows="18" spellcheck="false" autocomplete="off"
+                    <textarea v-model="rawContentDraft" :disabled="rawLoading" rows="12" spellcheck="false" autocomplete="off" autocapitalize="off"
                               class="w-full bg-black/50 border border-white/10 rounded-2xl px-5 py-4 text-sm text-emerald-100 font-mono outline-none"></textarea>
                     <div v-if="rawLoading" class="text-xs text-blue-300"><i class="fas fa-spinner fa-spin mr-2"></i>请求处理中，请稍候...</div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex justify-end gap-3 md:gap-4 shrink-0 safe-bottom">
                     <button @click="showRawModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
                     <button @click="saveRaw" :disabled="rawLoading" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-60">
                         <i class="fas fa-shield-check"></i><span>{{ rawLoading ? '验证中...' : '验证并重载' }}</span>
@@ -929,13 +1075,13 @@
         </div>
 
         <!-- Modal: Create/Edit Stream -->
-        <div v-if="showStreamModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div class="glass rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white">{{ isStreamEdit ? '编辑端口转发' : '新增端口转发' }}</h3>
-                    <button @click="showStreamModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+        <div v-if="showStreamModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white">{{ isStreamEdit ? '编辑端口转发' : '新增端口转发' }}</h3>
+                    <button @click="showStreamModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-8 space-y-5">
+                <div class="p-5 md:p-8 space-y-4 md:space-y-5 overflow-y-auto flex-1">
                     <div class="space-y-2">
                         <label class="text-xs font-bold text-gray-400 uppercase tracking-widest">规则名称</label>
                         <input v-model="streamForm.name" :disabled="isStreamEdit" type="text" placeholder="api-gateway"
@@ -955,7 +1101,7 @@
                         <i class="fas fa-info-circle mr-2"></i>保存后将自动验证并重载 Nginx，如重载失败会自动回滚到原配置。
                     </div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex justify-end gap-3 md:gap-4 shrink-0 safe-bottom">
                     <button @click="showStreamModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
                     <button @click="saveStream" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg">
                         {{ isStreamEdit ? '保存修改' : '确认创建' }}
@@ -965,24 +1111,24 @@
         </div>
 
         <!-- Modal: Stream Raw Edit -->
-        <div v-if="showStreamRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
-                        <i class="fas fa-terminal text-emerald-300"></i><span>手动编辑转发 - {{ streamRawName }}</span>
+        <div v-if="showStreamRawModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3 min-w-0">
+                        <i class="fas fa-terminal text-emerald-300"></i><span class="truncate">手动编辑转发 - {{ streamRawName }}</span>
                     </h3>
-                    <button @click="showStreamRawModal = false" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                    <button @click="showStreamRawModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2 shrink-0"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-6 space-y-3">
+                <div class="p-4 md:p-6 space-y-3 overflow-y-auto flex-1">
                     <div class="text-xs text-gray-500 flex items-center space-x-2">
                         <i class="fas fa-circle-info text-blue-300"></i>
                         <span>保存后自动执行 <code class="font-mono text-emerald-300">nginx -t</code> 与 <code class="font-mono text-emerald-300">systemctl reload nginx</code>，失败会回滚原配置。</span>
                     </div>
-                    <textarea v-model="streamRawContent" :disabled="streamRawLoading" rows="18"
+                    <textarea v-model="streamRawContent" :disabled="streamRawLoading" rows="12" spellcheck="false" autocapitalize="off"
                               class="w-full bg-black/50 border border-white/10 rounded-2xl px-5 py-4 text-sm text-emerald-100 font-mono outline-none"></textarea>
                     <div v-if="streamRawLoading" class="text-xs text-blue-300"><i class="fas fa-spinner fa-spin mr-2"></i>请求处理中，请稍候...</div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end space-x-4">
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex justify-end gap-3 md:gap-4 shrink-0 safe-bottom">
                     <button @click="showStreamRawModal = false" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">取消</button>
                     <button @click="saveStreamRaw" :disabled="streamRawLoading" class="btn-primary text-white px-10 py-3 rounded-2xl font-bold shadow-lg flex items-center space-x-2 disabled:opacity-60">
                         <i class="fas fa-shield-check"></i><span>{{ streamRawLoading ? '验证中...' : '验证并重载' }}</span>
@@ -992,15 +1138,15 @@
         </div>
 
         <!-- Modal: Site Log Viewer -->
-        <div v-if="showLogModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div class="glass rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
-                        <i class="fas fa-eye text-indigo-300"></i><span>{{ logModalSite }} · 日志详情</span>
+        <div v-if="showLogModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-5xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3 min-w-0">
+                        <i class="fas fa-eye text-indigo-300"></i><span class="truncate">{{ logModalSite }} · 日志详情</span>
                     </h3>
-                    <button @click="closeLogModal" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                    <button @click="closeLogModal" class="text-gray-500 hover:text-white transition p-2 -mr-2 shrink-0"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="p-4 md:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 overflow-y-auto flex-1">
                     <div>
                         <div class="flex items-center justify-between mb-2">
                             <div class="flex items-center space-x-3">
@@ -1009,7 +1155,7 @@
                             </div>
                             <span class="text-[11px] text-gray-500">{{ logModalContent.access.length }} 行</span>
                         </div>
-                        <div class="bg-black/40 border border-white/10 rounded-2xl h-72 overflow-y-auto text-[11px] text-gray-200 font-mono p-4 leading-5">
+                        <div class="bg-black/40 border border-white/10 rounded-2xl h-52 md:h-72 overflow-y-auto text-[11px] text-gray-200 font-mono p-3 md:p-4 leading-5">
                             <template v-if="logModalContent.access.length">
                                 <div v-for="(line, idx) in logModalContent.access" :key="idx" class="whitespace-pre-wrap mb-1">{{ line }}</div>
                             </template>
@@ -1024,7 +1170,7 @@
                             </div>
                             <span class="text-[11px] text-gray-500">{{ logModalContent.error.length }} 行</span>
                         </div>
-                        <div class="bg-black/40 border border-white/10 rounded-2xl h-72 overflow-y-auto text-[11px] text-red-200 font-mono p-4 leading-5">
+                        <div class="bg-black/40 border border-white/10 rounded-2xl h-52 md:h-72 overflow-y-auto text-[11px] text-red-200 font-mono p-3 md:p-4 leading-5">
                             <template v-if="logModalContent.error.length">
                                 <div v-for="(line, idx) in logModalContent.error" :key="idx" class="whitespace-pre-wrap mb-1">{{ line }}</div>
                             </template>
@@ -1032,22 +1178,22 @@
                         </div>
                     </div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 flex justify-end">
-                    <button @click="closeLogModal" class="px-6 py-3 text-gray-400 hover:text-white transition font-bold">关闭</button>
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex justify-end shrink-0 safe-bottom">
+                    <button @click="closeLogModal" class="w-full md:w-auto px-6 py-3 text-gray-400 hover:text-white transition font-bold">关闭</button>
                 </div>
             </div>
         </div>
 
         <!-- Modal: Install Progress -->
-        <div v-if="showInstallModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-40 p-4">
-            <div class="glass rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10">
-                <div class="px-8 py-6 border-b border-white/5 flex justify-between items-center">
-                    <h3 class="text-2xl font-bold text-white flex items-center space-x-3">
+        <div v-if="showInstallModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-40 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3">
                         <i class="fas fa-terminal text-blue-300"></i><span>Nginx 安装进度</span>
                     </h3>
-                    <button @click="closeInstallModal" class="text-gray-500 hover:text-white transition"><i class="fas fa-times text-xl"></i></button>
+                    <button @click="closeInstallModal" class="text-gray-500 hover:text-white transition p-2 -mr-2"><i class="fas fa-times text-xl"></i></button>
                 </div>
-                <div class="p-6 space-y-4">
+                <div class="p-4 md:p-6 space-y-4 overflow-y-auto flex-1">
                     <div>
                         <div class="text-xs text-gray-400 uppercase tracking-widest mb-2">当前状态</div>
                         <div class="flex items-center justify-between text-sm text-white">
@@ -1063,15 +1209,81 @@
                     </div>
                     <div>
                         <div class="text-xs text-gray-400 uppercase tracking-widest mb-2">进度日志</div>
-                        <div ref="installLogRef" class="bg-black/45 border border-white/10 rounded-2xl p-4 h-64 overflow-y-auto text-xs font-mono text-gray-200 space-y-1">
+                        <div ref="installLogRef" class="bg-black/45 border border-white/10 rounded-2xl p-3 md:p-4 h-52 md:h-64 overflow-y-auto text-xs font-mono text-gray-200 space-y-1 break-anywhere">
                             <div v-for="(line, idx) in installStatus.logs" :key="idx">{{ line }}</div>
                             <div v-if="!installStatus.logs || !installStatus.logs.length" class="text-gray-500">暂无日志输出。</div>
                         </div>
                     </div>
                 </div>
-                <div class="px-8 py-6 bg-white/5 text-right text-xs text-gray-500">
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 text-right text-xs text-gray-500 shrink-0 safe-bottom">
                     <span v-if="installStatus.is_running">安装进行中，请勿关闭窗口，日志每 2 秒自动刷新。</span>
                     <span v-else>安装任务已结束，可关闭窗口。</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal: Version & Advisories -->
+        <div v-if="showVersionModal" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-end md:items-center justify-center p-0 md:p-4">
+            <div class="glass modal-panel rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
+                <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
+                    <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3 min-w-0">
+                        <i class="fas fa-shield-halved text-emerald-300"></i><span class="truncate">版本与安全公告</span>
+                    </h3>
+                    <button @click="showVersionModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2 shrink-0"><i class="fas fa-times text-xl"></i></button>
+                </div>
+                <div class="p-4 md:p-6 space-y-4 overflow-y-auto flex-1">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div class="glass border border-white/5 rounded-2xl px-3 py-3">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest">当前版本</div>
+                            <div class="text-white font-mono text-sm mt-1">{{ versionReport.installed || '—' }}</div>
+                        </div>
+                        <div class="glass border border-white/5 rounded-2xl px-3 py-3">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest">分支</div>
+                            <div class="text-white text-sm mt-1">{{ versionReport.branch || '—' }}</div>
+                        </div>
+                        <div class="glass border border-white/5 rounded-2xl px-3 py-3">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest">建议版本</div>
+                            <div class="text-emerald-300 font-mono text-sm mt-1">{{ versionReport.upgrade_to || '—' }}</div>
+                        </div>
+                        <div class="glass border border-white/5 rounded-2xl px-3 py-3">
+                            <div class="text-[10px] text-gray-500 uppercase tracking-widest">命中公告</div>
+                            <div class="text-white text-sm mt-1">{{ versionReport.total_affected || 0 }} / {{ advisoryCount }}</div>
+                        </div>
+                    </div>
+
+                    <div v-if="versionReport.affected && versionReport.affected.length" class="space-y-2">
+                        <div v-for="adv in versionReport.affected" :key="adv.cve"
+                             class="glass border border-red-400/20 rounded-2xl px-4 py-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="text-sm text-white break-anywhere">{{ adv.title }}</div>
+                                    <div class="text-[11px] text-gray-500 font-mono mt-1 break-anywhere">
+                                        {{ adv.cve }} · 影响 {{ adv.vulnerable_text || '—' }} · 修复 {{ adv.not_vulnerable_text || '—' }}
+                                    </div>
+                                </div>
+                                <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold border"
+                                      :class="adv.severity === 'major' ? 'bg-red-500/15 text-red-200 border-red-400/40' : 'bg-amber-500/15 text-amber-200 border-amber-400/40'">
+                                    {{ adv.severity }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="p-6 text-center text-sm text-gray-400 border border-dashed border-white/10 rounded-2xl">
+                        当前版本未命中任何已知公告。
+                    </div>
+
+                    <p class="text-[11px] text-gray-500 leading-relaxed">
+                        公告数据内嵌自 <span class="font-mono text-gray-400">{{ versionReport.advisory_source || 'nginx.org' }}</span>
+                        （生成于 {{ versionReport.advisory_generated_at || '—' }}），比对在本机离线完成。
+                        如需刷新公告库，运行 <code class="font-mono text-emerald-300">python3 scripts/gen_advisories.py</code> 后重新编译。
+                    </p>
+                </div>
+                <div class="px-5 py-4 md:px-8 md:py-6 bg-white/5 flex flex-col md:flex-row justify-end gap-3 shrink-0 safe-bottom">
+                    <button @click="showVersionModal = false" class="w-full md:w-auto px-6 py-3 text-gray-400 hover:text-white transition font-bold">关闭</button>
+                    <button @click="upgradeNginx" :disabled="installStatus.is_running"
+                            class="w-full md:w-auto btn-primary text-white px-8 py-3 rounded-2xl font-bold shadow-lg disabled:opacity-50">
+                        {{ versionReport.vulnerable ? '立即升级到 ' + (versionReport.upgrade_to || '最新版') : '升级到最新' }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -1108,7 +1320,49 @@
             redirect: 'bg-orange-500/10 text-orange-300 border-orange-400/40'
         };
 
-        const installSteps = ['安装依赖', '安装 Rust', '创建目录', '下载源码', '编译 Brotli', '编译 Nginx', '配置系统'];
+        const navItems = [
+            { id: 'dashboard', label: '控制中心', icon: 'fa-gauge' },
+            { id: 'sites', label: '站点管理', icon: 'fa-globe' },
+            { id: 'streams', label: '端口转发', icon: 'fa-network-wired' },
+            { id: 'logs', label: '日志中心', icon: 'fa-scroll' },
+            { id: 'notifications', label: '通知设置', icon: 'fa-bell' },
+            { id: 'backup', label: '备份恢复', icon: 'fa-cloud' }
+        ];
+
+        // 手机底部导航只放高频入口，其余通过抽屉进入
+        const mobileTabs = [
+            { id: 'dashboard', label: '控制台', icon: 'fa-gauge' },
+            { id: 'sites', label: '站点', icon: 'fa-globe' },
+            { id: 'streams', label: '转发', icon: 'fa-network-wired' },
+            { id: 'logs', label: '日志', icon: 'fa-scroll' },
+            { id: 'more', label: '更多', icon: 'fa-ellipsis' }
+        ];
+
+        const emptyVersionReport = () => ({
+            installed: '',
+            branch: 'unknown',
+            status: 'unknown',
+            upgrade_to: '',
+            latest_stable: '',
+            latest_mainline: '',
+            vulnerable: false,
+            affected: [],
+            major_count: 0,
+            total_affected: 0,
+            advisory_source: 'https://nginx.org/en/security_advisories.html',
+            advisory_generated_at: '',
+            summary: ''
+        });
+
+        // 与后端 BuildNginxFromSource 打印的日志锚点对应，用于估算安装进度
+        const installPhases = [
+            { label: '安装编译依赖', match: '>>> 安装编译依赖' },
+            { label: '下载源码', match: '>>> 下载' },
+            { label: '完整性校验', match: '>>> 校验源码完整性' },
+            { label: 'configure', match: '>>> configure' },
+            { label: '编译并安装', match: '>>> 安装到系统路径' },
+            { label: '配置系统服务', match: '✅ 已写入 systemd unit' }
+        ];
         const defaultBackupSourceDir = '/etc/nginx';
 
         const defaultSite = () => ({
@@ -1140,6 +1394,9 @@
         createApp({
             setup() {
                 const currentTab = ref('dashboard');
+                const mobileNavOpen = ref(false);
+                const versionReport = ref(emptyVersionReport());
+                const showVersionModal = ref(false);
                 const status = ref({ nginx_active: false, nginx_version: '' });
                 const siteConfigs = ref([]);
                 const selectedSite = ref('');
@@ -1307,23 +1564,71 @@
 
                 const selectedSiteDetail = computed(() => siteConfigs.value.find(site => site.domain === selectedSite.value) || null);
 
+                const advisoryCount = computed(() => Number(versionReport.value.advisory_total) || 0);
+
+                const versionBadge = computed(() => {
+                    const r = versionReport.value || {};
+                    if (r.vulnerable) {
+                        return {
+                            label: `命中 ${r.total_affected || 0} 条公告`,
+                            icon: 'fa-triangle-exclamation',
+                            bg: 'bg-red-500/15 border-red-400/40 text-red-300',
+                            chip: 'bg-red-500/15 text-red-200 border-red-400/40'
+                        };
+                    }
+                    if (r.status === 'up_to_date') {
+                        return {
+                            label: '最新修复版',
+                            icon: 'fa-shield-halved',
+                            bg: 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300',
+                            chip: 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40'
+                        };
+                    }
+                    if (r.status === 'upgrade_recommended') {
+                        return {
+                            label: '建议升级',
+                            icon: 'fa-arrow-up',
+                            bg: 'bg-amber-500/15 border-amber-400/40 text-amber-300',
+                            chip: 'bg-amber-500/15 text-amber-200 border-amber-400/40'
+                        };
+                    }
+                    return {
+                        label: '未检测到',
+                        icon: 'fa-circle-question',
+                        bg: 'bg-white/5 border-white/10 text-gray-400',
+                        chip: 'bg-white/5 text-gray-300 border-white/10'
+                    };
+                });
+
+                const selectTab = (id) => {
+                    currentTab.value = id;
+                    mobileNavOpen.value = false;
+                };
+
+                const onMobileTab = (item) => {
+                    if (item.id === 'more') {
+                        mobileNavOpen.value = true;
+                        return;
+                    }
+                    selectTab(item.id);
+                };
+
                 const installProgress = computed(() => {
                     if (!installStatus.value) return 0;
-                    const total = installSteps.length;
-                    if (!total) return 0;
                     const logs = installStatus.value.logs || [];
                     let done = 0;
-                    installSteps.forEach(step => {
-                        if (logs.some(line => line.includes(`<<< 完成: ${step}`))) {
+                    installPhases.forEach(phase => {
+                        if (logs.some(line => line.includes(phase.match))) {
                             done += 1;
                         }
                     });
-                    let progress = (done / total) * 100;
-                    if (installStatus.value.is_running && done < total) {
-                        progress += (1 / total) * 50;
-                    }
-                    if (!installStatus.value.is_running) {
-                        progress = installStatus.value.exit_code === 0 ? 100 : Math.max(progress, 5);
+                    let progress = (done / installPhases.length) * 100;
+                    if (installStatus.value.is_running) {
+                        progress = Math.min(progress, 95);
+                    } else {
+                        progress = (installStatus.value.exit_code === 0 && logs.length)
+                            ? 100
+                            : Math.max(Math.min(progress, 100), 5);
                     }
                     return Math.min(100, Math.round(progress));
                 });
@@ -1468,6 +1773,9 @@
                     backupRunLoading.value = false;
                     backupTestLoading.value = false;
                     restoreForm.value = { remote_path: '' };
+                    mobileNavOpen.value = false;
+                    showVersionModal.value = false;
+                    versionReport.value = emptyVersionReport();
                     restoreLoading.value = false;
                     notificationSettings.value = defaultNotificationSettings();
                     notificationLoading.value = false;
@@ -2000,6 +2308,8 @@
                             };
                             if (!installStatus.value.is_running) {
                                 stopInstallPolling();
+                                await fetchStatus();
+                                await fetchVersionReport();
                             }
                         }
                     } catch (e) {
@@ -2401,6 +2711,67 @@
                     }
                 };
 
+                const fetchVersionReport = async () => {
+                    if (!isAuthenticated.value) return;
+                    try {
+                        const res = await fetch('/api/v1/system/version', withAuth());
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.ok) {
+                            versionReport.value = {
+                                ...emptyVersionReport(),
+                                ...data,
+                                affected: Array.isArray(data.affected) ? data.affected : []
+                            };
+                        }
+                    } catch (e) {
+                        // 版本自检失败不打断主流程，仅在控制台留痕
+                        console.warn('获取版本自检失败:', e);
+                    }
+                };
+
+                const upgradeNginx = async () => {
+                    if (installStatus.value.is_running) {
+                        notify('info', '已有安装/升级任务在运行');
+                        await openInstallModal();
+                        return;
+                    }
+                    const target = versionReport.value.upgrade_to || versionReport.value.latest_stable || '';
+                    const hint = target ? `将升级到 ${target}` : '将升级到 stable 通道最新版';
+                    if (!window.confirm(`${hint}。\n\n过程会下载源码、编译并重载 Nginx（通常 2-5 分钟），期间站点可能短暂中断。是否继续？`)) {
+                        return;
+                    }
+                    showVersionModal.value = false;
+                    try {
+                        const res = await fetch('/api/v1/system/upgrade', withAuth({
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ version: target })
+                        }));
+                        const data = await readJson(res);
+                        if (res.status === 401) {
+                            handleUnauthorized(data.error || '认证已过期，请重新登录');
+                            return;
+                        }
+                        if (res.status === 202 || res.status === 200) {
+                            notify('success', '升级任务已启动，正在编译安装');
+                            await openInstallModal();
+                            startInstallPolling();
+                        } else if (res.status === 409) {
+                            notify('info', '已有任务正在运行');
+                            await openInstallModal();
+                            startInstallPolling();
+                        } else {
+                            notify('error', '无法启动升级: ' + (data.error || res.statusText));
+                        }
+                    } catch (e) {
+                        notify('error', '请求失败: ' + e.message);
+                    }
+                };
+
                 const login = async () => {
                     loginError.value = '';
                     const token = (loginToken.value || '').trim();
@@ -2480,6 +2851,7 @@
                         fetchSites(),
                         fetchStreams(),
                         fetchInstallLogs(),
+                        fetchVersionReport(),
                         fetchBackupStatus(true, true),
                         fetchNotificationSettings()
                     ]);
@@ -2505,6 +2877,17 @@
 
                 return {
                     currentTab,
+                    navItems,
+                    mobileTabs,
+                    mobileNavOpen,
+                    selectTab,
+                    onMobileTab,
+                    versionReport,
+                    versionBadge,
+                    advisoryCount,
+                    showVersionModal,
+                    fetchVersionReport,
+                    upgradeNginx,
                     status,
                     siteConfigs,
                     selectedSite,

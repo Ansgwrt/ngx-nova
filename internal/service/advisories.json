@@ -1,0 +1,1884 @@
+{
+  "source": "https://nginx.org/en/security_advisories.html",
+  "generated_at": "2026-11-19T02:23:58Z",
+  "count": 78,
+  "recommended": {
+    "stable": "1.30.7",
+    "mainline": "1.31.9"
+  },
+  "advisories": [
+    {
+      "title": "Use-after-free during response processing in resolver",
+      "severity": "medium",
+      "cve": "CVE-2026-123634",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "0.6.18-1.31.8"
+    },
+    {
+      "title": "Memory corruption in HTTP/2 flow control",
+      "severity": "major",
+      "cve": "CVE-2026-123007",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.9.5-1.31.8"
+    },
+    {
+      "title": "Use-after-free in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2026-121810",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.25.0-1.31.8"
+    },
+    {
+      "title": "Use-after-free in HTTP/2",
+      "severity": "medium",
+      "cve": "CVE-2026-123633",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.19.7",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.19.7-1.31.8"
+    },
+    {
+      "title": "Infinite loop while reading client request body over TLS 1.3",
+      "severity": "major",
+      "cve": "CVE-2026-118899",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.13.0",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.13.0-1.31.8"
+    },
+    {
+      "title": "Use-after-free in mail proxy module",
+      "severity": "major",
+      "cve": "CVE-2026-113425",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.5.33",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "0.5.33-1.31.8"
+    },
+    {
+      "title": "NULL pointer dereference when using PROXY protocol version 2",
+      "severity": "minor",
+      "cve": "CVE-2026-120993",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.31.4",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+",
+      "vulnerable_text": "1.31.4-1.31.8"
+    },
+    {
+      "title": "Buffer overflow when using alias with try_files",
+      "severity": "minor",
+      "cve": "CVE-2026-125283",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.9.6",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "0.9.6-1.31.8"
+    },
+    {
+      "title": "SNI bypass when using client certificate validation in stream",
+      "severity": "medium",
+      "cve": "CVE-2026-120967",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.5",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.25.5-1.31.8"
+    },
+    {
+      "title": "Insufficient validation in stream ssl_preread module",
+      "severity": "minor",
+      "cve": "CVE-2026-123640",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.9"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.15.2",
+          "to": "1.31.8"
+        }
+      ],
+      "not_vulnerable_text": "1.31.9+, 1.30.7+",
+      "vulnerable_text": "1.15.2-1.31.8"
+    },
+    {
+      "title": "Buffer overflow when using alias with rewrite",
+      "severity": "medium",
+      "cve": "CVE-2026-15176",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.6"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.29",
+          "to": "1.31.6"
+        }
+      ],
+      "not_vulnerable_text": "1.31.7+, 1.30.6+",
+      "vulnerable_text": "0.1.29-1.31.6"
+    },
+    {
+      "title": "Buffer overflow in script evaluation",
+      "severity": "medium",
+      "cve": "CVE-2026-93479",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.6"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.31.2",
+          "to": "1.31.6"
+        },
+        {
+          "op": "range",
+          "from": "1.30.0",
+          "to": "1.30.5"
+        }
+      ],
+      "not_vulnerable_text": "1.31.7+, 1.30.6+",
+      "vulnerable_text": "1.31.2-1.31.6, 1.30.0-1.30.5"
+    },
+    {
+      "title": "Request body injection in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2026-95101",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.6"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.31.6"
+        }
+      ],
+      "not_vulnerable_text": "1.31.7+, 1.30.6+",
+      "vulnerable_text": "1.25.0-1.31.6"
+    },
+    {
+      "title": "Session forgery when using TLS session tickets",
+      "severity": "medium",
+      "cve": "CVE-2026-97629",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.6"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.23.2",
+          "to": "1.31.6"
+        }
+      ],
+      "not_vulnerable_text": "1.31.7+, 1.30.6+",
+      "vulnerable_text": "1.23.2-1.31.6"
+    },
+    {
+      "title": "Use-after-free when using asynchronous file I/O (AIO)",
+      "severity": "medium",
+      "cve": "CVE-2026-97205",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.6"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.8.11",
+          "to": "1.31.6"
+        }
+      ],
+      "not_vulnerable_text": "1.31.7+, 1.30.6+",
+      "vulnerable_text": "0.8.11-1.31.6"
+    },
+    {
+      "title": "Buffer overflow when using ngx_http_v3_module",
+      "severity": "medium",
+      "cve": "CVE-2026-90439",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.6"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.5"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.29.2",
+          "to": "1.31.5"
+        }
+      ],
+      "not_vulnerable_text": "1.31.6+, 1.30.5+",
+      "vulnerable_text": "1.29.2-1.31.5"
+    },
+    {
+      "title": "Buffer overflow when using map and regex",
+      "severity": "major",
+      "cve": "CVE-2026-42533",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.9.6",
+          "to": "1.31.2"
+        }
+      ],
+      "not_vulnerable_text": "1.31.3+, 1.30.4+",
+      "vulnerable_text": "0.9.6-1.31.2"
+    },
+    {
+      "title": "Memory disclosure when using ngx_http_slice_module",
+      "severity": "medium",
+      "cve": "CVE-2026-60005",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.15.8",
+          "to": "1.31.2"
+        }
+      ],
+      "not_vulnerable_text": "1.31.3+, 1.30.4+",
+      "vulnerable_text": "1.15.8-1.31.2"
+    },
+    {
+      "title": "Use-after-free when using ngx_http_ssi_module",
+      "severity": "medium",
+      "cve": "CVE-2026-56434",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.8.11",
+          "to": "1.31.2"
+        }
+      ],
+      "not_vulnerable_text": "1.31.3+, 1.30.4+",
+      "vulnerable_text": "0.8.11-1.31.2"
+    },
+    {
+      "title": "Use-after-free in HTTP/3",
+      "severity": "major",
+      "cve": "CVE-2026-42530",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.2"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.31.0",
+          "to": "1.31.1"
+        }
+      ],
+      "not_vulnerable_text": "1.31.2+",
+      "vulnerable_text": "1.31.0-1.31.1"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_proxy_v2_module and ngx_http_grpc_module",
+      "severity": "medium",
+      "cve": "CVE-2026-42055",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.2"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.13.10",
+          "to": "1.31.1"
+        }
+      ],
+      "not_vulnerable_text": "1.31.2+, 1.30.3+",
+      "vulnerable_text": "1.13.10-1.31.1"
+    },
+    {
+      "title": "Buffer overread in the ngx_http_charset_module",
+      "severity": "low",
+      "cve": "CVE-2026-48142",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.2"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.3.50",
+          "to": "1.31.1"
+        }
+      ],
+      "not_vulnerable_text": "1.31.2+, 1.30.3+",
+      "vulnerable_text": "0.3.50-1.31.1"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_rewrite_module",
+      "severity": "medium",
+      "cve": "CVE-2026-9256",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.1"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.2"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.17",
+          "to": "1.31.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.1+, 1.30.2+",
+      "vulnerable_text": "0.1.17-1.31.0"
+    },
+    {
+      "title": "HTTP/2 request injection in the ngx_http_proxy_module",
+      "severity": "medium",
+      "cve": "CVE-2026-42926",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.29.4",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "1.29.4-1.30.0"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_rewrite_module",
+      "severity": "medium",
+      "cve": "CVE-2026-42945",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.27",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "0.6.27-1.30.0"
+    },
+    {
+      "title": "Buffer overread in the ngx_http_scgi_module and ngx_http_uwsgi_module",
+      "severity": "medium",
+      "cve": "CVE-2026-42946",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.8.42",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "0.8.42-1.30.0"
+    },
+    {
+      "title": "Buffer overread in the ngx_http_charset_module",
+      "severity": "low",
+      "cve": "CVE-2026-42934",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.3.50",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "0.3.50-1.30.0"
+    },
+    {
+      "title": "HTTP/3 address spoofing",
+      "severity": "medium",
+      "cve": "CVE-2026-40460",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "1.25.0-1.30.0"
+    },
+    {
+      "title": "resolver use-after-free in OCSP",
+      "severity": "medium",
+      "cve": "CVE-2026-40701",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.31.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.30.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.19.0",
+          "to": "1.30.0"
+        }
+      ],
+      "not_vulnerable_text": "1.31.0+, 1.30.1+",
+      "vulnerable_text": "1.19.0-1.30.0"
+    },
+    {
+      "title": "Buffer overflow in ngx_http_dav_module",
+      "severity": "medium",
+      "cve": "CVE-2026-27654",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.5.13",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "0.5.13-1.29.6"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_mp4_module",
+      "severity": "medium",
+      "cve": "CVE-2026-27784",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.19",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "1.1.19-1.29.6"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_mp4_module",
+      "severity": "medium",
+      "cve": "CVE-2026-32647",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.19",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "1.1.19-1.29.6"
+    },
+    {
+      "title": "NULL pointer dereference while using CRAM-MD5 or APOP",
+      "severity": "low",
+      "cve": "CVE-2026-27651",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.5.15",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "0.5.15-1.29.6"
+    },
+    {
+      "title": "Injection in auth_http and XCLIENT",
+      "severity": "medium",
+      "cve": "CVE-2026-28753",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.27",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "0.6.27-1.29.6"
+    },
+    {
+      "title": "OCSP result bypass in stream",
+      "severity": "medium",
+      "cve": "CVE-2026-28755",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.27.2",
+          "to": "1.29.6"
+        }
+      ],
+      "not_vulnerable_text": "1.29.7+, 1.28.3+",
+      "vulnerable_text": "1.27.2-1.29.6"
+    },
+    {
+      "title": "SSL upstream injection",
+      "severity": "medium",
+      "cve": "CVE-2026-1642",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.5"
+        },
+        {
+          "op": "gte",
+          "version": "1.28.2"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.3.0",
+          "to": "1.29.4"
+        }
+      ],
+      "not_vulnerable_text": "1.29.5+, 1.28.2+",
+      "vulnerable_text": "1.3.0-1.29.4"
+    },
+    {
+      "title": "Buffer overread in the ngx_mail_smtp_module",
+      "severity": "low",
+      "cve": "CVE-2025-53859",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.29.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.7.22",
+          "to": "1.29.0"
+        }
+      ],
+      "not_vulnerable_text": "1.29.1+",
+      "vulnerable_text": "0.7.22-1.29.0"
+    },
+    {
+      "title": "SSL session reuse vulnerability",
+      "severity": "medium",
+      "cve": "CVE-2025-23419",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.4"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.3"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.11.4",
+          "to": "1.27.3"
+        }
+      ],
+      "not_vulnerable_text": "1.27.4+, 1.26.3+",
+      "vulnerable_text": "1.11.4-1.27.3"
+    },
+    {
+      "title": "Buffer overread in the ngx_http_mp4_module",
+      "severity": "low",
+      "cve": "CVE-2024-7347",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.1"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.2"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.5.13",
+          "to": "1.27.0"
+        }
+      ],
+      "not_vulnerable_text": "1.27.1+, 1.26.2+",
+      "vulnerable_text": "1.5.13-1.27.0"
+    },
+    {
+      "title": "Buffer overwrite in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2024-32760",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.25.5"
+        },
+        {
+          "op": "eq",
+          "version": "1.26.0"
+        }
+      ],
+      "not_vulnerable_text": "1.27.0+, 1.26.1+",
+      "vulnerable_text": "1.25.0-1.25.5, 1.26.0"
+    },
+    {
+      "title": "Stack overflow and use-after-free in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2024-31079",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.25.5"
+        },
+        {
+          "op": "eq",
+          "version": "1.26.0"
+        }
+      ],
+      "not_vulnerable_text": "1.27.0+, 1.26.1+",
+      "vulnerable_text": "1.25.0-1.25.5, 1.26.0"
+    },
+    {
+      "title": "NULL pointer dereference in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2024-35200",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.25.5"
+        },
+        {
+          "op": "eq",
+          "version": "1.26.0"
+        }
+      ],
+      "not_vulnerable_text": "1.27.0+, 1.26.1+",
+      "vulnerable_text": "1.25.0-1.25.5, 1.26.0"
+    },
+    {
+      "title": "Memory disclosure in HTTP/3",
+      "severity": "medium",
+      "cve": "CVE-2024-34161",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.27.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.26.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.25.5"
+        },
+        {
+          "op": "eq",
+          "version": "1.26.0"
+        }
+      ],
+      "not_vulnerable_text": "1.27.0+, 1.26.1+",
+      "vulnerable_text": "1.25.0-1.25.5, 1.26.0"
+    },
+    {
+      "title": "NULL pointer dereference in HTTP/3",
+      "severity": "major",
+      "cve": "CVE-2024-24989",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.25.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "eq",
+          "version": "1.25.3"
+        }
+      ],
+      "not_vulnerable_text": "1.25.4+",
+      "vulnerable_text": "1.25.3"
+    },
+    {
+      "title": "Use-after-free in HTTP/3",
+      "severity": "major",
+      "cve": "CVE-2024-24990",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.25.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.25.0",
+          "to": "1.25.3"
+        }
+      ],
+      "not_vulnerable_text": "1.25.4+",
+      "vulnerable_text": "1.25.0-1.25.3"
+    },
+    {
+      "title": "Memory corruption in the ngx_http_mp4_module",
+      "severity": "medium",
+      "cve": "CVE-2022-41741",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.23.2"
+        },
+        {
+          "op": "gte",
+          "version": "1.22.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.3",
+          "to": "1.23.1"
+        },
+        {
+          "op": "range",
+          "from": "1.0.7",
+          "to": "1.0.15"
+        }
+      ],
+      "not_vulnerable_text": "1.23.2+, 1.22.1+",
+      "vulnerable_text": "1.1.3-1.23.1, 1.0.7-1.0.15"
+    },
+    {
+      "title": "Memory disclosure in the ngx_http_mp4_module",
+      "severity": "medium",
+      "cve": "CVE-2022-41742",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.23.2"
+        },
+        {
+          "op": "gte",
+          "version": "1.22.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.3",
+          "to": "1.23.1"
+        },
+        {
+          "op": "range",
+          "from": "1.0.7",
+          "to": "1.0.15"
+        }
+      ],
+      "not_vulnerable_text": "1.23.2+, 1.22.1+",
+      "vulnerable_text": "1.1.3-1.23.1, 1.0.7-1.0.15"
+    },
+    {
+      "title": "1-byte memory overwrite in resolver",
+      "severity": "medium",
+      "cve": "CVE-2021-23017",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.21.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.20.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.20.0"
+        }
+      ],
+      "not_vulnerable_text": "1.21.0+, 1.20.1+",
+      "vulnerable_text": "0.6.18-1.20.0"
+    },
+    {
+      "title": "Excessive CPU usage in HTTP/2 with small window updates",
+      "severity": "medium",
+      "cve": "CVE-2019-9511",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.17.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.16.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.17.2"
+        }
+      ],
+      "not_vulnerable_text": "1.17.3+, 1.16.1+",
+      "vulnerable_text": "1.9.5-1.17.2"
+    },
+    {
+      "title": "Excessive CPU usage in HTTP/2 with priority changes",
+      "severity": "low",
+      "cve": "CVE-2019-9513",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.17.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.16.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.17.2"
+        }
+      ],
+      "not_vulnerable_text": "1.17.3+, 1.16.1+",
+      "vulnerable_text": "1.9.5-1.17.2"
+    },
+    {
+      "title": "Excessive memory usage in HTTP/2 with zero length headers",
+      "severity": "low",
+      "cve": "CVE-2019-9516",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.17.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.16.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.17.2"
+        }
+      ],
+      "not_vulnerable_text": "1.17.3+, 1.16.1+",
+      "vulnerable_text": "1.9.5-1.17.2"
+    },
+    {
+      "title": "Excessive memory usage in HTTP/2",
+      "severity": "low",
+      "cve": "CVE-2018-16843",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.15.6"
+        },
+        {
+          "op": "gte",
+          "version": "1.14.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.15.5"
+        }
+      ],
+      "not_vulnerable_text": "1.15.6+, 1.14.1+",
+      "vulnerable_text": "1.9.5-1.15.5"
+    },
+    {
+      "title": "Excessive CPU usage in HTTP/2",
+      "severity": "low",
+      "cve": "CVE-2018-16844",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.15.6"
+        },
+        {
+          "op": "gte",
+          "version": "1.14.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.9.5",
+          "to": "1.15.5"
+        }
+      ],
+      "not_vulnerable_text": "1.15.6+, 1.14.1+",
+      "vulnerable_text": "1.9.5-1.15.5"
+    },
+    {
+      "title": "Memory disclosure in the ngx_http_mp4_module",
+      "severity": "medium",
+      "cve": "CVE-2018-16845",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.15.6"
+        },
+        {
+          "op": "gte",
+          "version": "1.14.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.3",
+          "to": "1.15.5"
+        },
+        {
+          "op": "range",
+          "from": "1.0.7",
+          "to": "1.0.15"
+        }
+      ],
+      "not_vulnerable_text": "1.15.6+, 1.14.1+",
+      "vulnerable_text": "1.1.3-1.15.5, 1.0.7-1.0.15"
+    },
+    {
+      "title": "Integer overflow in the range filter",
+      "severity": "medium",
+      "cve": "CVE-2017-7529",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.13.3"
+        },
+        {
+          "op": "gte",
+          "version": "1.12.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.5.6",
+          "to": "1.13.2"
+        }
+      ],
+      "not_vulnerable_text": "1.13.3+, 1.12.1+",
+      "vulnerable_text": "0.5.6-1.13.2"
+    },
+    {
+      "title": "NULL pointer dereference while writing client request body",
+      "severity": "medium",
+      "cve": "CVE-2016-4450",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.11.1"
+        },
+        {
+          "op": "gte",
+          "version": "1.10.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.3.9",
+          "to": "1.11.0"
+        }
+      ],
+      "not_vulnerable_text": "1.11.1+, 1.10.1+",
+      "vulnerable_text": "1.3.9-1.11.0"
+    },
+    {
+      "title": "Invalid pointer dereference in resolver",
+      "severity": "medium",
+      "cve": "CVE-2016-0742",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.9.10"
+        },
+        {
+          "op": "gte",
+          "version": "1.8.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.9.9"
+        }
+      ],
+      "not_vulnerable_text": "1.9.10+, 1.8.1+",
+      "vulnerable_text": "0.6.18-1.9.9"
+    },
+    {
+      "title": "Use-after-free during CNAME response processing in resolver",
+      "severity": "medium",
+      "cve": "CVE-2016-0746",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.9.10"
+        },
+        {
+          "op": "gte",
+          "version": "1.8.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.9.9"
+        }
+      ],
+      "not_vulnerable_text": "1.9.10+, 1.8.1+",
+      "vulnerable_text": "0.6.18-1.9.9"
+    },
+    {
+      "title": "Insufficient limits of CNAME resolution in resolver",
+      "severity": "medium",
+      "cve": "CVE-2016-0747",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.9.10"
+        },
+        {
+          "op": "gte",
+          "version": "1.8.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.9.9"
+        }
+      ],
+      "not_vulnerable_text": "1.9.10+, 1.8.1+",
+      "vulnerable_text": "0.6.18-1.9.9"
+    },
+    {
+      "title": "SSL session reuse vulnerability",
+      "severity": "medium",
+      "cve": "CVE-2014-3616",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.7.5"
+        },
+        {
+          "op": "gte",
+          "version": "1.6.2"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.5.6",
+          "to": "1.7.4"
+        }
+      ],
+      "not_vulnerable_text": "1.7.5+, 1.6.2+",
+      "vulnerable_text": "0.5.6-1.7.4"
+    },
+    {
+      "title": "STARTTLS command injection",
+      "severity": "medium",
+      "cve": "CVE-2014-3556",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.7.4"
+        },
+        {
+          "op": "gte",
+          "version": "1.6.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.5.6",
+          "to": "1.7.3"
+        }
+      ],
+      "not_vulnerable_text": "1.7.4+, 1.6.1+",
+      "vulnerable_text": "1.5.6-1.7.3"
+    },
+    {
+      "title": "SPDY heap buffer overflow",
+      "severity": "major",
+      "cve": "CVE-2014-0133",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.5.12"
+        },
+        {
+          "op": "gte",
+          "version": "1.4.7"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.3.15",
+          "to": "1.5.11"
+        }
+      ],
+      "not_vulnerable_text": "1.5.12+, 1.4.7+",
+      "vulnerable_text": "1.3.15-1.5.11"
+    },
+    {
+      "title": "SPDY memory corruption",
+      "severity": "major",
+      "cve": "CVE-2014-0088",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.5.11"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "eq",
+          "version": "1.5.10"
+        }
+      ],
+      "not_vulnerable_text": "1.5.11+",
+      "vulnerable_text": "1.5.10"
+    },
+    {
+      "title": "Request line parsing vulnerability",
+      "severity": "medium",
+      "cve": "CVE-2013-4547",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.5.7"
+        },
+        {
+          "op": "gte",
+          "version": "1.4.4"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.8.41",
+          "to": "1.5.6"
+        }
+      ],
+      "not_vulnerable_text": "1.5.7+, 1.4.4+",
+      "vulnerable_text": "0.8.41-1.5.6"
+    },
+    {
+      "title": "Memory disclosure with specially crafted HTTP backend responses",
+      "severity": "medium",
+      "cve": "CVE-2013-2070",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.5.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.4.1"
+        },
+        {
+          "op": "gte",
+          "version": "1.2.9"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.4",
+          "to": "1.2.8"
+        },
+        {
+          "op": "range",
+          "from": "1.3.9",
+          "to": "1.4.0"
+        }
+      ],
+      "not_vulnerable_text": "1.5.0+, 1.4.1+, 1.2.9+",
+      "vulnerable_text": "1.1.4-1.2.8, 1.3.9-1.4.0"
+    },
+    {
+      "title": "Stack-based buffer overflow with specially crafted request",
+      "severity": "major",
+      "cve": "CVE-2013-2028",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.5.0"
+        },
+        {
+          "op": "gte",
+          "version": "1.4.1"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.3.9",
+          "to": "1.4.0"
+        }
+      ],
+      "not_vulnerable_text": "1.5.0+, 1.4.1+",
+      "vulnerable_text": "1.3.9-1.4.0"
+    },
+    {
+      "title": "Vulnerabilities with Windows directory aliases",
+      "severity": "medium",
+      "cve": "CVE-2011-4963",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.3.1"
+        },
+        {
+          "op": "gte",
+          "version": "1.2.1"
+        }
+      ],
+      "vulnerable": [],
+      "not_vulnerable_text": "1.3.1+, 1.2.1+",
+      "vulnerable_text": "nginx/Windows 0.7.52-1.3.0"
+    },
+    {
+      "title": "Buffer overflow in the ngx_http_mp4_module",
+      "severity": "major",
+      "cve": "CVE-2012-2089",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.1.19"
+        },
+        {
+          "op": "gte",
+          "version": "1.0.15"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "1.1.3",
+          "to": "1.1.18"
+        },
+        {
+          "op": "range",
+          "from": "1.0.7",
+          "to": "1.0.14"
+        }
+      ],
+      "not_vulnerable_text": "1.1.19+, 1.0.15+",
+      "vulnerable_text": "1.1.3-1.1.18, 1.0.7-1.0.14"
+    },
+    {
+      "title": "Memory disclosure with specially crafted backend responses",
+      "severity": "major",
+      "cve": "CVE-2012-1180",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.1.17"
+        },
+        {
+          "op": "gte",
+          "version": "1.0.14"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.0",
+          "to": "1.1.16"
+        }
+      ],
+      "not_vulnerable_text": "1.1.17+, 1.0.14+",
+      "vulnerable_text": "0.1.0-1.1.16"
+    },
+    {
+      "title": "Buffer overflow in resolver",
+      "severity": "medium",
+      "cve": "CVE-2011-4315",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "1.1.8"
+        },
+        {
+          "op": "gte",
+          "version": "1.0.10"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.6.18",
+          "to": "1.1.7"
+        }
+      ],
+      "not_vulnerable_text": "1.1.8+, 1.0.10+",
+      "vulnerable_text": "0.6.18-1.1.7"
+    },
+    {
+      "title": "Vulnerabilities with invalid UTF-8 sequence on Windows",
+      "severity": "major",
+      "cve": "CVE-2010-2266",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.41"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.67"
+        }
+      ],
+      "vulnerable": [],
+      "not_vulnerable_text": "0.8.41+, 0.7.67+",
+      "vulnerable_text": "nginx/Windows 0.7.52-0.8.40"
+    },
+    {
+      "title": "Vulnerabilities with Windows file default stream",
+      "severity": "major",
+      "cve": "CVE-2010-2263",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.40"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.66"
+        }
+      ],
+      "vulnerable": [],
+      "not_vulnerable_text": "0.8.40+, 0.7.66+",
+      "vulnerable_text": "nginx/Windows 0.7.52-0.8.39"
+    },
+    {
+      "title": "Vulnerabilities with Windows 8.3 filename pseudonyms",
+      "severity": "major",
+      "cve": "",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.33"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.65"
+        }
+      ],
+      "vulnerable": [],
+      "not_vulnerable_text": "0.8.33+, 0.7.65+",
+      "vulnerable_text": "nginx/Windows 0.7.52-0.8.32"
+    },
+    {
+      "title": "An error log data are not sanitized",
+      "severity": "none",
+      "cve": "CVE-2009-4487",
+      "not_vulnerable": [],
+      "vulnerable": [],
+      "not_vulnerable_text": "none",
+      "vulnerable_text": "all"
+    },
+    {
+      "title": "The renegotiation vulnerability in SSL protocol",
+      "severity": "major",
+      "cve": "CVE-2009-3555",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.23"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.64"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.0",
+          "to": "0.8.22"
+        }
+      ],
+      "not_vulnerable_text": "0.8.23+, 0.7.64+",
+      "vulnerable_text": "0.1.0-0.8.22"
+    },
+    {
+      "title": "Directory traversal vulnerability",
+      "severity": "minor",
+      "cve": "CVE-2009-3898",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.17"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.63"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.0",
+          "to": "0.8.16"
+        }
+      ],
+      "not_vulnerable_text": "0.8.17+, 0.7.63+",
+      "vulnerable_text": "0.1.0-0.8.16"
+    },
+    {
+      "title": "Buffer underflow vulnerability",
+      "severity": "major",
+      "cve": "CVE-2009-2629",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.15"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.62"
+        },
+        {
+          "op": "gte",
+          "version": "0.6.39"
+        },
+        {
+          "op": "gte",
+          "version": "0.5.38"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.0",
+          "to": "0.8.14"
+        }
+      ],
+      "not_vulnerable_text": "0.8.15+, 0.7.62+, 0.6.39+, 0.5.38+",
+      "vulnerable_text": "0.1.0-0.8.14"
+    },
+    {
+      "title": "Null pointer dereference vulnerability",
+      "severity": "major",
+      "cve": "CVE-2009-3896",
+      "not_vulnerable": [
+        {
+          "op": "gte",
+          "version": "0.8.14"
+        },
+        {
+          "op": "gte",
+          "version": "0.7.62"
+        },
+        {
+          "op": "gte",
+          "version": "0.6.39"
+        },
+        {
+          "op": "gte",
+          "version": "0.5.38"
+        }
+      ],
+      "vulnerable": [
+        {
+          "op": "range",
+          "from": "0.1.0",
+          "to": "0.8.13"
+        }
+      ],
+      "not_vulnerable_text": "0.8.14+, 0.7.62+, 0.6.39+, 0.5.38+",
+      "vulnerable_text": "0.1.0-0.8.13"
+    }
+  ]
+}

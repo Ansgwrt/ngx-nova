@@ -352,7 +352,7 @@ func (s *BackupService) ensureBackupAssets(sourceDir, remotePath string) error {
 func (s *BackupService) updateBackupConfig(sourceDir, remotePath string) error {
 	sourceDir = strings.TrimSpace(sourceDir)
 	if sourceDir == "" {
-		sourceDir = model.NginxConfDir
+		sourceDir = model.ConfDir()
 	}
 	remotePath = strings.Trim(strings.TrimSpace(remotePath), "/")
 	if remotePath == "" {
@@ -444,7 +444,7 @@ func (s *BackupService) loadBackupConfig() (*backupConfig, error) {
 		}
 	}
 	if cfg.SourceDir == "" {
-		cfg.SourceDir = model.NginxConfDir
+		cfg.SourceDir = model.ConfDir()
 	}
 	return cfg, nil
 }
