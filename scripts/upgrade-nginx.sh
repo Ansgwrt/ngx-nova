@@ -720,6 +720,12 @@ main() {
   ok "备份目录: ${BACKUP_DIR:-无（未做改动）}"
   ok "日志文件: ${LOG}"
 
+  # 面板是独立组件，默认不动；不提示的话很容易误以为"升级脚本跑完就全好了"
+  if [[ $PANEL -eq 0 && -f "$PANEL_BIN" ]]; then
+    warn "面板（nginx-mgr）未更新：本次只处理 nginx。"
+    warn "如需一并更新面板，重新执行并加上 --panel（从镜像提取，秒级完成）"
+  fi
+
   if [[ -n "${BACKUP_DIR:-}" && -f "${BACKUP_DIR}/nginx.bin" ]]; then
     cat <<EOF
 
