@@ -16,6 +16,7 @@
 #   ./upgrade-nginx.sh --install-rust     # 动态模块需要 Rust 时自动安装
 #   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（从镜像提取，默认 answgrt/ngx-nova:latest）
 #   ./upgrade-nginx.sh --panel --panel-image ghcr.io/ansgwrt/ngx-nova:latest
+#   ./upgrade-nginx.sh --panel --panel-release v1.0.0   # 指定 Release 版本（二进制安装首选）
 #   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64   # 离线：用本地文件
 #
 # 退出码：0 成功 / 1 参数或环境问题 / 2 编译或验证失败（已回滚）
@@ -45,6 +46,9 @@ else
   PANEL_IMAGES=(ansgwrt/ngx-nova:latest ghcr.io/ansgwrt/ngx-nova:latest)
 fi
 PANEL_EXTRACT_DIR=""
+# 二进制安装场景的首选来源：GitHub Release 资产（不需要 docker）
+PANEL_REPO="${PANEL_REPO:-Ansgwrt/ngx-nova}"
+PANEL_RELEASE="${PANEL_RELEASE:-latest}"
 PANEL_BIN="/usr/local/bin/nginx-mgr"
 PANEL_UNIT="nginx-mgr"
 PANEL_PORT="${PANEL_PORT:-8083}"
@@ -79,6 +83,7 @@ while [[ $# -gt 0 ]]; do
     --panel)      PANEL=1; shift ;;
     --panel-src)  PANEL=1; PANEL_SRC="${2:?缺少路径}"; shift 2 ;;
     --panel-image) PANEL=1; PANEL_IMAGES=("${2:?缺少镜像名}"); shift 2 ;;
+    --panel-release) PANEL=1; PANEL_RELEASE="${2:?缺少版本，如 v1.0.0}"; shift 2 ;;
     -h|--help)    usage ;;
     *) die "未知参数: $1（-h 查看用法）" ;;
   esac
@@ -499,6 +504,60 @@ verify_and_install() {
 
 # ---------------------------------------------------------------- 面板二进制来源
 
+
+# 从 GitHub Release 下载对应架构的包（二进制安装的首选更新方式，无需 docker）
+fetch_panel_from_release() {
+  command -v curl >/dev/null 2>&1 || return 1
+
+  local base url
+  base="https://github.com/${PANEL_REPO}/releases"
+  if [[ "$PANEL_RELEASE" == "latest" ]]; then
+    url="${base}/latest/download/nginx-mgr-linux-${ARCH}.tar.gz"
+  else
+    url="${base}/download/${PANEL_RELEASE}/nginx-mgr-linux-${ARCH}.tar.gz"
+  fi
+
+  log "尝试 GitHub Release: ${url}"
+  local dir; dir="$(mktemp -d)"
+  if ! curl -fsSL --retry 2 --max-time 300 -o "${dir}/pkg.tar.gz" "$url"; then
+    warn "  下载失败（Release 不存在、资产名不匹配或网络不通），跳过"
+    rm -rf "$dir"; return 1
+  fi
+
+  # 有 .sha256 资产就校验，缺失则跳过（旧版本 Release 可能没有）
+  if curl -fsSL --retry 1 --max-time 60 -o "${dir}/pkg.sha256" "${url}.sha256" 2>/dev/null; then
+    if ( cd "$dir" && sed "s#\*\?nginx-mgr-linux-${ARCH}.tar.gz#pkg.tar.gz#" pkg.sha256 | sha256sum -c - >/dev/null 2>&1 ); then
+      ok "  Release 校验和匹配"
+    else
+      warn "  校验和不匹配，拒绝使用该资产"
+      rm -rf "$dir"; return 1
+    fi
+  else
+    warn "  未找到 .sha256 资产，跳过校验"
+  fi
+
+  if ! tar -xzf "${dir}/pkg.tar.gz" -C "$dir" 2>/dev/null; then
+    warn "  解压失败，跳过"
+    rm -rf "$dir"; return 1
+  fi
+
+  if [[ ! -f "${dir}/nginx-mgr-linux-${ARCH}" ]]; then
+    warn "  包内没有 nginx-mgr-linux-${ARCH}，跳过"
+    rm -rf "$dir"; return 1
+  fi
+
+  # 统一成后续流程期望的文件名
+  mv -f "${dir}/nginx-mgr-linux-${ARCH}" "${dir}/nginx-mgr"
+  if [[ -f "${dir}/tokenctl-linux-${ARCH}" ]]; then
+    mv -f "${dir}/tokenctl-linux-${ARCH}" "${dir}/tokenctl"
+  fi
+  chmod +x "${dir}/nginx-mgr"
+  rm -f "${dir}/pkg.tar.gz"
+  PANEL_EXTRACT_DIR="$dir"
+  ok "已从 Release 取得二进制（${PANEL_RELEASE}）"
+  return 0
+}
+
 # 从容器镜像里取出面板二进制与 tokenctl。
 # 只做 create + cp，不启动容器；按候选列表依次尝试（Docker Hub → GHCR）。
 extract_panel_from_image() {
@@ -578,25 +637,46 @@ update_panel() {
     [[ -n "$src" ]] && tk="${src%/*}/tokenctl-linux-${ARCH}"
   fi
 
-  # 2) 没有本地文件就从镜像里取
+  # 2) 没有本地文件：有 docker 走镜像（跟随 main 最新），否则走 Release（二进制安装场景）
   if [[ -z "$src" ]]; then
     if [[ $DRY_RUN -eq 1 ]]; then
-      log "[预演] 将从镜像提取面板二进制，候选顺序：${PANEL_IMAGES[*]}"
+      log "[预演] 面板来源优先级：本地文件 → GitHub Release(${PANEL_RELEASE}) → 镜像(${PANEL_IMAGES[*]})"
       log "[预演] 将备份 ${PANEL_BIN} 并 restart ${PANEL_UNIT}"
       return 0
     fi
-    if ! extract_panel_from_image; then
-      die "无法从镜像获取可用的面板二进制。已尝试：${PANEL_IMAGES[*]}
-      常见原因：
-        1) 镜像尚未发布或未公开 —— docker manifest inspect ${PANEL_IMAGES[0]}
-        2) 镜像里 ${ARCH} 架构的二进制不对（构建参数写错）—— 需重新构建镜像
-      兜底方案：用本地文件 --panel-src /path/nginx-mgr-linux-${ARCH}"
+
+    # 有 docker 时优先用镜像：镜像跟随 main 构建，通常比 tag 对应的 Release 新
+    if command -v docker >/dev/null 2>&1; then
+      if extract_panel_from_image; then
+        src="${PANEL_EXTRACT_DIR}/nginx-mgr"
+        tk="${PANEL_EXTRACT_DIR}/tokenctl"
+      fi
+    else
+      log "未检测到 docker，改用 GitHub Release 下载（二进制安装场景）"
     fi
-    src="${PANEL_EXTRACT_DIR}/nginx-mgr"
-    tk="${PANEL_EXTRACT_DIR}/tokenctl"
   fi
 
-  # 3) --panel-src 允许给 URL
+  # 3) 镜像没拿到（无 docker / 拉取失败 / 架构不符）→ 退回 Release
+  if [[ -z "$src" ]] && fetch_panel_from_release; then
+    src="${PANEL_EXTRACT_DIR}/nginx-mgr"
+    tk="${PANEL_EXTRACT_DIR}/tokenctl"
+    warn "Release 资产对应 tag ${PANEL_RELEASE}，如需 main 上的最新构建请用 --panel-src 或镜像"
+  fi
+
+  # 4) 全部失败
+  if [[ -z "$src" ]]; then
+    die "获取面板二进制失败，已尝试全部来源：
+        · 本地文件：脚本同目录 / ./ / /root/ 下的 nginx-mgr-linux-${ARCH}
+        · 容器镜像：${PANEL_IMAGES[*]}（当前机器有/无 docker 见上）
+        · GitHub Release：github.com/${PANEL_REPO} (${PANEL_RELEASE})
+      排查建议：
+        1) 二进制安装机器通常没有 docker —— 用 --panel-release latest 走 Release
+        2) Release 未发布或资产名不符 —— 检查 releases 页面
+        3) 镜像里 ${ARCH} 二进制架构不对（构建参数写错）—— 需重建镜像
+      兜底：--panel-src /path/nginx-mgr-linux-${ARCH}"
+  fi
+
+  # 5) 显式给定的 --panel-src 允许是 URL
   if [[ "$src" =~ ^https?:// ]]; then
     local dl; dl="$(mktemp -d)/nginx-mgr"
     log "下载面板二进制: $src"
