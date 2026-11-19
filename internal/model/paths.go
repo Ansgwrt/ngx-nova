@@ -107,7 +107,7 @@ var (
 	acmeEnabled   atomic.Bool
 )
 
-// DetectNginxFeatures 解析 nginx -V 的编译参数，决定站点模板能否使用 brotli / acme 指令。
+// DetectNginxFeatures 解析 nginx 的编译参数与主配置，决定站点模板能否使用 brotli / acme 指令。
 // 模板里如果写了二进制不支持的指令，nginx -t 会直接失败，所以必须先探测再渲染。
 func DetectNginxFeatures() {
 	out, err := exec.Command(SbinPath(), "-V").CombinedOutput()
@@ -118,7 +118,31 @@ func DetectNginxFeatures() {
 	}
 	text := strings.ToLower(string(out))
 	brotliEnabled.Store(strings.Contains(text, "brotli"))
-	acmeEnabled.Store(strings.Contains(text, "http_acme_module"))
+
+	acme := strings.Contains(text, "http_acme_module")
+	if !acme {
+		// 以 load_module 动态加载的模块不会出现在 -V 里，只能查主配置
+		acme = acmeLoadedFromConfig(ConfDir())
+	}
+	acmeEnabled.Store(acme)
+}
+
+// acmeLoadedFromConfig 判断主配置是否通过 load_module 加载了 ACME 模块。
+func acmeLoadedFromConfig(confDir string) bool {
+	data, err := os.ReadFile(confDir + "/nginx.conf")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(strings.ToLower(string(data)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue // 注释掉的 load_module 不算
+		}
+		if strings.Contains(line, "load_module") && strings.Contains(line, "acme") {
+			return true
+		}
+	}
+	return false
 }
 
 // BrotliEnabled 报告当前 nginx 是否带 brotli 模块。

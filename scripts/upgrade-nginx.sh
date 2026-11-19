@@ -14,6 +14,8 @@
 #   ./upgrade-nginx.sh -n                 # 预演：只打印计划，不编译不替换
 #   ./upgrade-nginx.sh -y                 # 非交互
 #   ./upgrade-nginx.sh --install-rust     # 动态模块需要 Rust 时自动安装
+#   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（nginx-mgr / tokenctl）
+#   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64
 #
 # 退出码：0 成功 / 1 参数或环境问题 / 2 编译或验证失败（已回滚）
 set -Eeuo pipefail
@@ -33,6 +35,11 @@ LOG="/var/log/nginx-upgrade-${STAMP}.log"
 DRY_RUN=0
 ASSUME_YES=0
 INSTALL_RUST=0
+PANEL=0
+PANEL_SRC=""
+PANEL_BIN="/usr/local/bin/nginx-mgr"
+PANEL_UNIT="nginx-mgr"
+PANEL_PORT="${PANEL_PORT:-8083}"
 
 # ---------------------------------------------------------------- 输出与错误
 
@@ -53,7 +60,7 @@ on_error() {
 }
 trap on_error ERR
 
-usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -61,6 +68,8 @@ while [[ $# -gt 0 ]]; do
     -n|--dry-run) DRY_RUN=1; shift ;;
     -y|--yes)     ASSUME_YES=1; shift ;;
     --install-rust) INSTALL_RUST=1; shift ;;
+    --panel)      PANEL=1; shift ;;
+    --panel-src)  PANEL=1; PANEL_SRC="${2:?缺少路径}"; shift 2 ;;
     -h|--help)    usage ;;
     *) die "未知参数: $1（-h 查看用法）" ;;
   esac
@@ -121,8 +130,9 @@ check_nginx() {
 
   if [[ "$CURRENT_VERSION" == "$TARGET_VERSION" ]]; then
     if running_binary_matches; then
-      ok "磁盘与运行中均为 ${TARGET_VERSION}，无需升级"
-      exit 0
+      ok "磁盘与运行中均为 ${TARGET_VERSION}"
+      NGINX_UP_TO_DATE=1
+      return 0
     fi
     warn "磁盘已是 ${TARGET_VERSION}，但运行中的进程仍是旧镜像（reload 不会换镜像）"
     log "重启 nginx 使新二进制生效"
@@ -130,8 +140,10 @@ check_nginx() {
     sleep 1
     running_binary_matches || die "重启后运行镜像仍不匹配，请检查 systemctl status nginx"
     ok "已生效，运行版本: $(running_version)"
-    exit 0
+    NGINX_UP_TO_DATE=1
+    return 0
   fi
+  NGINX_UP_TO_DATE=0
 }
 
 # ------------------------------------------------- 从 nginx -V 继承编译参数
@@ -475,54 +487,163 @@ verify_and_install() {
 
 # ---------------------------------------------------------------- 主流程
 
-main() {
-  log "=== nginx 升级开始 ==="
-  detect_arch
-  check_nginx
-  collect_configure_args
+# ---------------------------------------------------------------- 面板更新
 
-  if [[ $DRY_RUN -eq 0 ]]; then
-    ensure_deps
+panel_health() {
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${PANEL_PORT}/ui/" || echo 000)"
+  [[ "$code" == "200" ]]
+}
+
+update_panel() {
+  log "=== 更新面板（nginx-mgr）==="
+  : "${BACKUP_DIR:=${BACKUP_ROOT}/panel-${STAMP}}"
+
+  local src="$PANEL_SRC"
+  if [[ -z "$src" ]]; then
+    local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local cand
+    for cand in "${here}/nginx-mgr-linux-${ARCH}" "./nginx-mgr-linux-${ARCH}" "/root/nginx-mgr-linux-${ARCH}"; do
+      if [[ -f "$cand" ]]; then src="$cand"; break; fi
+    done
   fi
-  probe_hardening_flags
-  compute_build_flags
+  [[ -n "$src" ]] || die "--panel 需要二进制：用 --panel-src 指定路径或 URL，或把 nginx-mgr-linux-${ARCH} 放到脚本同目录"
 
-  log "计划：${CURRENT_VERSION} → ${TARGET_VERSION}（${ARCH}）"
-  log "将保留：${#STATIC_MODULES[@]} 个静态模块、${#DYNAMIC_MODULES[@]} 个动态模块；不覆盖任何站点配置"
+  if [[ "$src" =~ ^https?:// ]]; then
+    local dl; dl="$(mktemp -d)/nginx-mgr"
+    log "下载面板二进制: $src"
+    curl -fsSL --retry 3 --max-time 300 -o "$dl" "$src"
+    src="$dl"
+  fi
+  [[ -f "$src" ]] || die "面板二进制不存在: $src"
+  src="$(readlink -f "$src")"
+
+  # 架构校验，防止把 amd64 传上 arm64 机器
+  local info; info="$(file -b "$src")"
+  [[ "$info" == *ELF*64* ]] || die "不是 64 位 ELF 可执行文件: ${info}"
+  case "$ARCH" in
+    amd64) [[ "$info" == *x86-64* ]] || die "架构不匹配（期望 x86-64）: ${info}" ;;
+    arm64) [[ "$info" == *aarch64* ]] || die "架构不匹配（期望 aarch64）: ${info}" ;;
+    armv7) [[ "$info" == *ARM* ]] || die "架构不匹配: ${info}" ;;
+  esac
+  ok "二进制校验通过（${ARCH}）: $(basename "$src")"
+
+  if [[ -f "$PANEL_BIN" ]] && cmp -s "$src" "$PANEL_BIN"; then
+    ok "面板二进制与在跑版本一致，跳过替换"
+    return 0
+  fi
 
   if [[ $DRY_RUN -eq 1 ]]; then
-    echo
-    log "预演模式，以下为将执行的 configure 参数："
-    printf '  ./configure %s \\\n      --with-cc-opt="%s" \\\n      --with-ld-opt="%s"\n\n' \
-      "${CONFIGURE_ARGS[*]}" "$CC_OPT" "$LD_OPT"
+    log "[预演] 将备份 ${PANEL_BIN} → ${BACKUP_DIR}/nginx-mgr.bin，替换后 restart ${PANEL_UNIT}"
+    return 0
+  fi
+
+  mkdir -p "$BACKUP_DIR"
+  if [[ -f "$PANEL_BIN" ]]; then
+    cp -a "$PANEL_BIN" "${BACKUP_DIR}/nginx-mgr.bin"
+    ok "旧面板已备份: ${BACKUP_DIR}/nginx-mgr.bin"
+  fi
+
+  # tokenctl 与面板同版本，一并更新（存在才动）
+  local tk="${src%/*}/tokenctl-linux-${ARCH}"
+  if [[ -f "$tk" ]]; then
+    [[ -f /usr/local/bin/tokenctl ]] && cp -a /usr/local/bin/tokenctl "${BACKUP_DIR}/tokenctl.bin"
+    install -m 0755 "$tk" /usr/local/bin/tokenctl
+    ok "tokenctl 已更新"
+  fi
+
+  # 原子替换 + 重启
+  install -m 0755 "$src" "${PANEL_BIN}.new"
+  mv -f "${PANEL_BIN}.new" "$PANEL_BIN"
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl restart "$PANEL_UNIT"
+  log "等待面板就绪"
+
+  local i
+  for i in $(seq 1 15); do
+    sleep 1
+    if panel_health; then
+      ok "面板健康检查通过（http://127.0.0.1:${PANEL_PORT}/ui/ → 200）"
+      return 0
+    fi
+  done
+
+  warn "面板启动后健康检查失败，开始回滚"
+  [[ -f "${BACKUP_DIR}/nginx-mgr.bin" ]] && cp -a "${BACKUP_DIR}/nginx-mgr.bin" "$PANEL_BIN"
+  [[ -f "${BACKUP_DIR}/tokenctl.bin" ]] && cp -a "${BACKUP_DIR}/tokenctl.bin" /usr/local/bin/tokenctl
+  systemctl restart "$PANEL_UNIT" 2>/dev/null || true
+  systemctl --no-pager status "$PANEL_UNIT" 2>&1 | tail -12
+  die "面板更新失败，已回滚到旧二进制"
+}
+
+main() {
+  log "=== 升级开始 ==="
+  detect_arch
+  check_nginx
+
+  if [[ ${NGINX_UP_TO_DATE:-0} -eq 1 ]]; then
+    log "nginx 已是 ${TARGET_VERSION}，跳过编译"
+  else
+    collect_configure_args
+    [[ $DRY_RUN -eq 0 ]] && ensure_deps
+    probe_hardening_flags
+    compute_build_flags
+
+    log "计划：${CURRENT_VERSION} → ${TARGET_VERSION}（${ARCH}）"
+    log "将保留：${#STATIC_MODULES[@]} 个静态模块、${#DYNAMIC_MODULES[@]} 个动态模块；不覆盖任何站点配置"
+
+    if [[ $DRY_RUN -eq 1 ]]; then
+      echo
+      log "预演模式，以下为将执行的 configure 参数："
+      printf '  ./configure %s \\\n      --with-cc-opt="%s" \\\n      --with-ld-opt="%s"\n\n' \
+        "${CONFIGURE_ARGS[*]}" "$CC_OPT" "$LD_OPT"
+    else
+      if [[ $ASSUME_YES -eq 0 ]]; then
+        read -r -p "确认继续？升级期间会有一次 restart（约 0.2s 中断）。[y/N] " a
+        [[ "$a" =~ ^[Yy]$ ]] || { log "已取消"; exit 0; }
+      fi
+      fetch_source
+      ensure_rust_if_needed
+      backup_everything
+      build_nginx
+      staged_verify
+      install_modules
+      verify_and_install
+    fi
+  fi
+
+  if [[ $PANEL -eq 1 ]]; then
+    update_panel
+  fi
+
+  if [[ $DRY_RUN -eq 1 ]]; then
     ok "预演结束，未做任何改动"
     exit 0
   fi
 
-  if [[ $ASSUME_YES -eq 0 ]]; then
-    read -r -p "确认继续？升级期间会有一次 reload（无中断）。[y/N] " a
-    [[ "$a" =~ ^[Yy]$ ]] || { log "已取消"; exit 0; }
-  fi
-
-  fetch_source
-  ensure_rust_if_needed
-  backup_everything
-  build_nginx
-  staged_verify
-  install_modules
-  verify_and_install
-
   echo
-  ok "=== 升级完成：${CURRENT_VERSION} → ${TARGET_VERSION}（${ARCH}）==="
-  ok "备份目录: $(cat /tmp/.nginx_upgrade_backup_dir 2>/dev/null || echo "$BACKUP_ROOT")"
+  if [[ ${NGINX_UP_TO_DATE:-0} -eq 1 ]]; then
+    ok "=== 完成：nginx 保持 ${TARGET_VERSION}（${ARCH}）==="
+  else
+    ok "=== 升级完成：${CURRENT_VERSION} → ${TARGET_VERSION}（${ARCH}）==="
+  fi
+  ok "备份目录: ${BACKUP_DIR:-无（未做改动）}"
   ok "日志文件: ${LOG}"
-  cat <<EOF
+
+  if [[ -n "${BACKUP_DIR:-}" && -f "${BACKUP_DIR}/nginx.bin" ]]; then
+    cat <<EOF
 
 回滚方式（如需）：
   cp -a ${BACKUP_DIR}/nginx.bin ${NGINX_BIN}
-  tar -xzf ${BACKUP_DIR}/nginx-conf.tar.gz -C /
-  systemctl reload nginx
+  systemctl restart nginx
 EOF
+  fi
+  if [[ -n "${BACKUP_DIR:-}" && -f "${BACKUP_DIR}/nginx-mgr.bin" ]]; then
+    cat <<EOF
+  cp -a ${BACKUP_DIR}/nginx-mgr.bin ${PANEL_BIN}
+  systemctl restart ${PANEL_UNIT}
+EOF
+  fi
 }
 
 main
