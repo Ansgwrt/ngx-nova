@@ -1,0 +1,13 @@
+# Shell 脚本必须是 LF，否则在 Linux 上会报 "set: pipefail: invalid option name"
+*.sh            text eol=lf
+*.bash          text eol=lf
+Dockerfile      text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+Makefile        text eol=lf
+
+# Go 源码按平台习惯即可，统一 LF 避免 diff 噪音
+*.go            text eol=lf
+*.tmpl          text eol=lf
+*.json          text eol=lf
+*.md            text eol=lf
