@@ -76,6 +76,8 @@ jobs:
           tar -czf "${BINARY}-linux-${{ matrix.goarch }}.tar.gz" \
             "${BINARY}-linux-${{ matrix.goarch }}" "tokenctl-linux-${{ matrix.goarch }}"
           sha256sum "${BINARY}-linux-${{ matrix.goarch }}.tar.gz" > "${BINARY}-linux-${{ matrix.goarch }}.tar.gz.sha256"
+          # 裸二进制已进 tar，删掉避免 Release 资产里重复
+          rm -f "${BINARY}-linux-${{ matrix.goarch }}" "tokenctl-linux-${{ matrix.goarch }}"
           ls -lh
 
       - uses: actions/upload-artifact@v7
@@ -98,7 +100,13 @@ jobs:
           path: artifacts
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: 生成合并校验文件
+        run: |
+          cd artifacts
+          sha256sum ./*.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
