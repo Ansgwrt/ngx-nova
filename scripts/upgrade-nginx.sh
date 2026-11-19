@@ -14,8 +14,9 @@
 #   ./upgrade-nginx.sh -n                 # 预演：只打印计划，不编译不替换
 #   ./upgrade-nginx.sh -y                 # 非交互
 #   ./upgrade-nginx.sh --install-rust     # 动态模块需要 Rust 时自动安装
-#   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（nginx-mgr / tokenctl）
-#   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64
+#   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（从镜像提取，默认 answgrt/ngx-nova:latest）
+#   ./upgrade-nginx.sh --panel --panel-image ghcr.io/ansgwrt/ngx-nova:latest
+#   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64   # 离线：用本地文件
 #
 # 退出码：0 成功 / 1 参数或环境问题 / 2 编译或验证失败（已回滚）
 set -Eeuo pipefail
@@ -37,6 +38,13 @@ ASSUME_YES=0
 INSTALL_RUST=0
 PANEL=0
 PANEL_SRC=""
+# 默认从镜像提取面板二进制；Docker Hub 优先，拉不到自动回落 GHCR
+if [[ -n "${PANEL_IMAGE:-}" ]]; then
+  PANEL_IMAGES=("$PANEL_IMAGE")
+else
+  PANEL_IMAGES=(ansgwrt/ngx-nova:latest ghcr.io/ansgwrt/ngx-nova:latest)
+fi
+PANEL_EXTRACT_DIR=""
 PANEL_BIN="/usr/local/bin/nginx-mgr"
 PANEL_UNIT="nginx-mgr"
 PANEL_PORT="${PANEL_PORT:-8083}"
@@ -70,6 +78,7 @@ while [[ $# -gt 0 ]]; do
     --install-rust) INSTALL_RUST=1; shift ;;
     --panel)      PANEL=1; shift ;;
     --panel-src)  PANEL=1; PANEL_SRC="${2:?缺少路径}"; shift 2 ;;
+    --panel-image) PANEL=1; PANEL_IMAGES=("${2:?缺少镜像名}"); shift 2 ;;
     -h|--help)    usage ;;
     *) die "未知参数: $1（-h 查看用法）" ;;
   esac
@@ -487,6 +496,63 @@ verify_and_install() {
 
 # ---------------------------------------------------------------- 主流程
 
+
+# ---------------------------------------------------------------- 面板二进制来源
+
+# 从容器镜像里取出面板二进制与 tokenctl。
+# 只做 create + cp，不启动容器；按候选列表依次尝试（Docker Hub → GHCR）。
+extract_panel_from_image() {
+  command -v docker >/dev/null 2>&1 || return 1
+
+  local img cid dir
+  for img in "${PANEL_IMAGES[@]}"; do
+    log "尝试镜像: ${img}（linux/${ARCH}）"
+    if ! docker pull --platform "linux/${ARCH}" "$img" >/dev/null 2>&1; then
+      warn "  拉取失败（镜像不存在、未公开或需要登录），跳过"
+      continue
+    fi
+
+    if ! cid="$(docker create --platform "linux/${ARCH}" "$img" 2>/dev/null)"; then
+      warn "  无法从该镜像创建容器，跳过"
+      continue
+    fi
+
+    dir="$(mktemp -d)"
+    if docker cp "${cid}:/usr/local/bin/nginx-mgr" "${dir}/nginx-mgr" >/dev/null 2>&1; then
+      # 架构校验：镜像可能是用错参数构建的（例如 arm64 标签里装 amd64 二进制），
+      # 命中就换下一个候选，不要让错误架构的二进制落到系统里。
+      local info; info="$(file -b "${dir}/nginx-mgr" 2>/dev/null || echo unknown)"
+      case "$ARCH" in
+        amd64) if [[ "$info" != *x86-64* ]]; then
+                 warn "  镜像内二进制架构不符（期望 amd64）: ${info}"
+                 docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$dir"; continue
+               fi ;;
+        arm64) if [[ "$info" != *aarch64* ]]; then
+                 warn "  镜像内二进制架构不符（期望 arm64）: ${info}"
+                 docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$dir"; continue
+               fi ;;
+      esac
+      if docker cp "${cid}:/usr/local/bin/tokenctl" "${dir}/tokenctl" >/dev/null 2>&1; then
+        ok "  已提取 nginx-mgr 与 tokenctl"
+      else
+        warn "  镜像内无 tokenctl，本次只更新面板"
+        rm -f "${dir}/tokenctl"
+      fi
+      docker rm -f "$cid" >/dev/null 2>&1 || true
+      chmod +x "${dir}/nginx-mgr"
+      PANEL_EXTRACT_DIR="$dir"
+      echo "$img" > "${dir}/.source-image"
+      ok "面板二进制来源: ${img}"
+      return 0
+    fi
+
+    docker rm -f "$cid" >/dev/null 2>&1 || true
+    rm -rf "$dir"
+    warn "  镜像内未找到 /usr/local/bin/nginx-mgr，跳过"
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------- 面板更新
 
 panel_health() {
@@ -500,20 +566,43 @@ update_panel() {
   : "${BACKUP_DIR:=${BACKUP_ROOT}/panel-${STAMP}}"
 
   local src="$PANEL_SRC"
+  local tk=""
+
   if [[ -z "$src" ]]; then
+    # 1) 脚本同目录 / 常见路径下的本地二进制（离线可用）
     local here; here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local cand
     for cand in "${here}/nginx-mgr-linux-${ARCH}" "./nginx-mgr-linux-${ARCH}" "/root/nginx-mgr-linux-${ARCH}"; do
       if [[ -f "$cand" ]]; then src="$cand"; break; fi
     done
+    [[ -n "$src" ]] && tk="${src%/*}/tokenctl-linux-${ARCH}"
   fi
-  [[ -n "$src" ]] || die "--panel 需要二进制：用 --panel-src 指定路径或 URL，或把 nginx-mgr-linux-${ARCH} 放到脚本同目录"
 
+  # 2) 没有本地文件就从镜像里取
+  if [[ -z "$src" ]]; then
+    if [[ $DRY_RUN -eq 1 ]]; then
+      log "[预演] 将从镜像提取面板二进制，候选顺序：${PANEL_IMAGES[*]}"
+      log "[预演] 将备份 ${PANEL_BIN} 并 restart ${PANEL_UNIT}"
+      return 0
+    fi
+    if ! extract_panel_from_image; then
+      die "无法从镜像获取可用的面板二进制。已尝试：${PANEL_IMAGES[*]}
+      常见原因：
+        1) 镜像尚未发布或未公开 —— docker manifest inspect ${PANEL_IMAGES[0]}
+        2) 镜像里 ${ARCH} 架构的二进制不对（构建参数写错）—— 需重新构建镜像
+      兜底方案：用本地文件 --panel-src /path/nginx-mgr-linux-${ARCH}"
+    fi
+    src="${PANEL_EXTRACT_DIR}/nginx-mgr"
+    tk="${PANEL_EXTRACT_DIR}/tokenctl"
+  fi
+
+  # 3) --panel-src 允许给 URL
   if [[ "$src" =~ ^https?:// ]]; then
     local dl; dl="$(mktemp -d)/nginx-mgr"
     log "下载面板二进制: $src"
     curl -fsSL --retry 3 --max-time 300 -o "$dl" "$src"
     src="$dl"
+    tk="${dl%/*}/tokenctl-linux-${ARCH}"
   fi
   [[ -f "$src" ]] || die "面板二进制不存在: $src"
   src="$(readlink -f "$src")"
@@ -530,6 +619,7 @@ update_panel() {
 
   if [[ -f "$PANEL_BIN" ]] && cmp -s "$src" "$PANEL_BIN"; then
     ok "面板二进制与在跑版本一致，跳过替换"
+    [[ -n "$PANEL_EXTRACT_DIR" ]] && rm -rf "$PANEL_EXTRACT_DIR"
     return 0
   fi
 
@@ -545,8 +635,7 @@ update_panel() {
   fi
 
   # tokenctl 与面板同版本，一并更新（存在才动）
-  local tk="${src%/*}/tokenctl-linux-${ARCH}"
-  if [[ -f "$tk" ]]; then
+  if [[ -n "$tk" && -f "$tk" ]]; then
     [[ -f /usr/local/bin/tokenctl ]] && cp -a /usr/local/bin/tokenctl "${BACKUP_DIR}/tokenctl.bin"
     install -m 0755 "$tk" /usr/local/bin/tokenctl
     ok "tokenctl 已更新"
@@ -564,6 +653,7 @@ update_panel() {
     sleep 1
     if panel_health; then
       ok "面板健康检查通过（http://127.0.0.1:${PANEL_PORT}/ui/ → 200）"
+      [[ -n "$PANEL_EXTRACT_DIR" ]] && rm -rf "$PANEL_EXTRACT_DIR"
       return 0
     fi
   done

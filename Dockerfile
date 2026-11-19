@@ -19,12 +19,31 @@ ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-ARG TARGETOS=linux
-ARG TARGETARCH=amd64
-RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-      go build -trimpath -ldflags "-s -w -buildid=" -o /out/nginx-mgr . \
- && GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-      go build -trimpath -ldflags "-s -w -buildid=" -o /out/tokenctl ./cmd/tokenctl
+# 注意：这里必须「不带默认值」地重新声明，才能继承 buildx 自动注入的目标架构。
+# 写成 ARG TARGETARCH=amd64 会把这个默认值当成实际值，导致 arm64 镜像里装 amd64 二进制。
+ARG TARGETOS
+ARG TARGETARCH
+RUN set -eu; \
+    goos="${TARGETOS:-linux}"; \
+    goarch="${TARGETARCH:-$(go env GOARCH)}"; \
+    echo ">>> 交叉编译目标: ${goos}/${goarch}"; \
+    GOOS="$goos" GOARCH="$goarch" \
+      go build -trimpath -ldflags "-s -w -buildid=" -o /out/nginx-mgr . ; \
+    GOOS="$goos" GOARCH="$goarch" \
+      go build -trimpath -ldflags "-s -w -buildid=" -o /out/tokenctl ./cmd/tokenctl ; \
+    case "$goarch" in \
+      amd64) want=62 ;; \
+      arm64) want=183 ;; \
+      *) want="" ;; \
+    esac; \
+    if [ -n "$want" ]; then \
+      got="$(od -An -t u2 -j 18 -N 2 /out/nginx-mgr | tr -d ' ')"; \
+      if [ "$got" != "$want" ]; then \
+        echo "!!! 架构校验失败: 期望 ${goarch}(e_machine=${want}) 实际 ${got}" >&2; \
+        exit 1; \
+      fi; \
+      echo ">>> 架构校验通过: ${goarch}(e_machine=${want})"; \
+    fi
 
 # ---------- 2. 源码编译 nginx（目标架构，arm64 走 QEMU 模拟） ----------
 FROM debian:bookworm-slim AS nginxbuilder
