@@ -60,15 +60,34 @@ jobs:
           GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags "-s -w -buildid=" -o "dist/${BINARY}-linux-${{ matrix.goarch }}" .
-          go build -trimpath -ldflags "-s -w -buildid=" -o "dist/tokenctl-linux-${{ matrix.goarch }}" ./cmd/tokenctl
+          # 构建戳：面板自更新（upgrade-nginx.sh --panel）靠它判断新旧
+          STAMP="NGXBUILD:$(date -u +%Y%m%dT%H%M%SZ)"
+          echo "构建戳: $STAMP"
+          go build -trimpath -ldflags "-s -w -buildid= -X main.buildStamp=${STAMP}" -o "dist/${BINARY}-linux-${{ matrix.goarch }}" .
+          go build -trimpath -ldflags "-s -w -buildid= -X main.buildStamp=${STAMP}" -o "dist/tokenctl-linux-${{ matrix.goarch }}" ./cmd/tokenctl
 
       - name: 校验产物架构
         run: |
           file "dist/${BINARY}-linux-${{ matrix.goarch }}"
           file "dist/tokenctl-linux-${{ matrix.goarch }}"
-          # 确认是目标架构的静态 ELF，不实际启动服务（启动会占用端口阻塞 CI）
           readelf -h "dist/${BINARY}-linux-${{ matrix.goarch }}" | grep -E "Class|Machine"
+          # 硬断言：直接读 ELF 头 e_machine，架构不对就让构建失败（不依赖 file 的输出文案）
+          case "${{ matrix.goarch }}" in
+            amd64) want=62 ;;
+            arm64) want=183 ;;
+            *)     echo "未知架构"; exit 1 ;;
+          esac
+          for f in "dist/${BINARY}-linux-${{ matrix.goarch }}" "dist/tokenctl-linux-${{ matrix.goarch }}"; do
+            got="$(od -An -t u2 -j 18 -N 2 "$f" | tr -d ' ')"
+            if [ "$got" != "$want" ]; then
+              echo "!!! $f 架构错误: 期望 e_machine=${want} 实际 ${got}"; exit 1
+            fi
+            echo "$f -> e_machine=${got} ✓"
+          done
+          # 构建戳必须存在，否则脚本无法判断新旧
+          if ! grep -aq "NGXBUILD:[0-9]\{8\}T[0-9]\{6\}Z" "dist/${BINARY}-linux-${{ matrix.goarch }}"; then
+            echo "!!! 二进制缺少构建戳"; exit 1
+          fi
 
       - name: 打包
         run: |

@@ -17,6 +17,7 @@
 #   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（从镜像提取，默认 answgrt/ngx-nova:latest）
 #   ./upgrade-nginx.sh --panel --panel-image ghcr.io/ansgwrt/ngx-nova:latest
 #   ./upgrade-nginx.sh --panel --panel-release v1.0.0   # 指定 Release 版本（二进制安装首选）
+#   ./upgrade-nginx.sh --panel --panel-allow-older      # 允许降级（别名 --panel-force）
 #   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64   # 离线：用本地文件
 #
 # 退出码：0 成功 / 1 参数或环境问题 / 2 编译或验证失败（已回滚）
@@ -37,6 +38,7 @@ LOG="/var/log/nginx-upgrade-${STAMP}.log"
 DRY_RUN=0
 ASSUME_YES=0
 INSTALL_RUST=0
+ALLOW_OLDER=0
 PANEL=0
 PANEL_SRC=""
 # 默认从镜像提取面板二进制；Docker Hub 优先，拉不到自动回落 GHCR
@@ -72,7 +74,7 @@ on_error() {
 }
 trap on_error ERR
 
-usage() { sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -84,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --panel-src)  PANEL=1; PANEL_SRC="${2:?缺少路径}"; shift 2 ;;
     --panel-image) PANEL=1; PANEL_IMAGES=("${2:?缺少镜像名}"); shift 2 ;;
     --panel-release) PANEL=1; PANEL_RELEASE="${2:?缺少版本，如 v1.0.0}"; shift 2 ;;
+    --panel-allow-older|--panel-force) ALLOW_OLDER=1; shift ;;
     -h|--help)    usage ;;
     *) die "未知参数: $1（-h 查看用法）" ;;
   esac
@@ -330,6 +333,47 @@ fetch_source() {
   ok "源码就绪: ${SRC_DIR}"
 }
 
+
+# ---------------------------------------------------------------- 二进制识别
+
+# 直接读 ELF 头识别架构，不依赖 file 命令。
+# 踩过：最小化 Debian 没装 file 包，脚本在架构校验处 127 退出。
+# 输出：x86-64 / aarch64 / armv7 / elf32 / not-elf / machine-<n> / missing
+elf_arch() {
+  local f="$1"
+  [[ -f "$f" ]] || { echo "missing"; return 1; }
+  local magic cls mach
+  magic="$(od -An -tx1 -N4 "$f" 2>/dev/null | tr -d ' \n')"
+  [[ "$magic" == "7f454c46" ]] || { echo "not-elf"; return 1; }
+  cls="$(od -An -tu1 -j4 -N1 "$f" 2>/dev/null | tr -d ' \n')"
+  [[ "$cls" == "2" ]] || { echo "elf32"; return 1; }
+  mach="$(od -An -tu2 -j18 -N2 "$f" 2>/dev/null | tr -d ' \n')"
+  case "$mach" in
+    62)  echo "x86-64" ;;
+    183) echo "aarch64" ;;
+    40)  echo "armv7" ;;
+    "")  echo "unknown" ;;
+    *)   echo "machine-${mach}" ;;
+  esac
+}
+
+# 当前架构期望的 ELF 标识
+elf_arch_expected() {
+  case "$ARCH" in
+    amd64) echo "x86-64" ;;
+    arm64) echo "aarch64" ;;
+    armv7) echo "armv7" ;;
+    *)     echo "" ;;
+  esac
+}
+
+# 从二进制里取构建戳（NGXBUILD:YYYYMMDDTHHMMSSZ）。
+# 旧构建没有这个标记，返回空 —— 调用方需按"无法判定"处理。
+binary_build_stamp() {
+  [[ -f "$1" ]] || return 0
+  # 找不到时报 1 + pipefail 会让 set -e 中断整个脚本（踩过），末尾吞掉状态
+  { grep -aoE 'NGXBUILD:[0-9]{8}T[0-9]{6}Z' "$1" 2>/dev/null || true; } | head -1 || true
+}
 
 # ---------------------------------------------------------------- 运行态判定
 
@@ -580,17 +624,11 @@ extract_panel_from_image() {
     if docker cp "${cid}:/usr/local/bin/nginx-mgr" "${dir}/nginx-mgr" >/dev/null 2>&1; then
       # 架构校验：镜像可能是用错参数构建的（例如 arm64 标签里装 amd64 二进制），
       # 命中就换下一个候选，不要让错误架构的二进制落到系统里。
-      local info; info="$(file -b "${dir}/nginx-mgr" 2>/dev/null || echo unknown)"
-      case "$ARCH" in
-        amd64) if [[ "$info" != *x86-64* ]]; then
-                 warn "  镜像内二进制架构不符（期望 amd64）: ${info}"
-                 docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$dir"; continue
-               fi ;;
-        arm64) if [[ "$info" != *aarch64* ]]; then
-                 warn "  镜像内二进制架构不符（期望 arm64）: ${info}"
-                 docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$dir"; continue
-               fi ;;
-      esac
+      local got want; got="$(elf_arch "${dir}/nginx-mgr" || true)"; want="$(elf_arch_expected)"
+      if [[ -z "$want" || "$got" != "$want" ]]; then
+        warn "  镜像内二进制架构不符（期望 ${ARCH}/${want:-未知}，实际 ${got:-未知}）"
+        docker rm -f "$cid" >/dev/null 2>&1 || true; rm -rf "$dir"; continue
+      fi
       if docker cp "${cid}:/usr/local/bin/tokenctl" "${dir}/tokenctl" >/dev/null 2>&1; then
         ok "  已提取 nginx-mgr 与 tokenctl"
       else
@@ -687,15 +725,57 @@ update_panel() {
   [[ -f "$src" ]] || die "面板二进制不存在: $src"
   src="$(readlink -f "$src")"
 
-  # 架构校验，防止把 amd64 传上 arm64 机器
-  local info; info="$(file -b "$src")"
-  [[ "$info" == *ELF*64* ]] || die "不是 64 位 ELF 可执行文件: ${info}"
-  case "$ARCH" in
-    amd64) [[ "$info" == *x86-64* ]] || die "架构不匹配（期望 x86-64）: ${info}" ;;
-    arm64) [[ "$info" == *aarch64* ]] || die "架构不匹配（期望 aarch64）: ${info}" ;;
-    armv7) [[ "$info" == *ARM* ]] || die "架构不匹配: ${info}" ;;
+  # 架构校验，防止把 amd64 传上 arm64 机器（读 ELF 头，不依赖 file 命令）
+  local info want; info="$(elf_arch "$src" || true)"; want="$(elf_arch_expected)"
+  case "$info" in
+    x86-64|aarch64|armv7) : ;;
+    *) die "不是可用的 64 位 ELF（识别结果: ${info:-未知}）: $(basename "$src")" ;;
   esac
+  [[ -z "$want" || "$info" == "$want" ]] || die "架构不匹配（期望 ${want}，实际 ${info}）: $(basename "$src")"
   ok "二进制校验通过（${ARCH}）: $(basename "$src")"
+
+  # ---- 拒绝降级 ----
+  # Release 资产对应 tag，可能落后于镜像/main 构建；镜像修 bug 期间也可能退回旧 Release。
+  # 拿构建戳比较，避免把旧前端/旧修复无声地装回去。
+  local new_stamp old_stamp
+  new_stamp="$(binary_build_stamp "$src" || true)"
+  old_stamp=""
+  if [[ -f "$PANEL_BIN" ]]; then
+    old_stamp="$(binary_build_stamp "$PANEL_BIN" || true)"
+  fi
+
+  if [[ -n "$new_stamp" && -n "$old_stamp" ]]; then
+    if [[ "$new_stamp" < "$old_stamp" ]]; then
+      [[ $ALLOW_OLDER -eq 1 ]] || die "拒绝降级：待安装的构建早于已安装版本
+        待安装: ${new_stamp}
+        已安装: ${old_stamp}
+      确认要降级请加 --panel-allow-older"
+      warn "待安装 ${new_stamp} 早于已安装 ${old_stamp}，按 --panel-allow-older 继续"
+    elif [[ "$new_stamp" == "$old_stamp" ]]; then
+      ok "构建戳一致（${new_stamp}）"
+    fi
+  elif [[ -z "$new_stamp" && -n "$old_stamp" ]]; then
+    [[ $ALLOW_OLDER -eq 1 ]] || die "拒绝降级：待安装的二进制没有构建戳（旧构建），
+      而当前已安装版本带构建戳 ${old_stamp}，说明来源是更早的包。
+      请用镜像 / --panel-src / 更新的 Release；确认要覆盖请加 --panel-allow-older"
+    warn "待安装二进制无构建戳，已按 --panel-allow-older 继续"
+  elif [[ -n "$new_stamp" && -z "$old_stamp" ]]; then
+    ok "当前安装版本无构建戳（旧构建），本次为升级（${new_stamp}）"
+  else
+    warn "两侧都没有构建戳，无法自动判断新旧"
+    warn "  待安装: $(sha256sum "$src" | cut -c1-16)…  ${PANEL_SRC:-${PANEL_RELEASE:-未知来源}}"
+    if [[ -f "$PANEL_BIN" ]]; then
+      warn "  已安装: $(sha256sum "$PANEL_BIN" | cut -c1-16)…  ${PANEL_BIN}"
+    fi
+    if [[ $ALLOW_OLDER -eq 0 ]]; then
+      if [[ $ASSUME_YES -eq 0 && -t 0 ]]; then
+        read -r -p "继续安装可能覆盖更新的版本，确认？[y/N] " ans
+        [[ "$ans" =~ ^[Yy]$ ]] || { log "已取消"; return 0; }
+      else
+        die "无法判断新旧且非交互运行，已中止。确认继续请加 --panel-allow-older"
+      fi
+    fi
+  fi
 
   if [[ -f "$PANEL_BIN" ]] && cmp -s "$src" "$PANEL_BIN"; then
     ok "面板二进制与在跑版本一致，跳过替换"

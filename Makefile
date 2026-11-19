@@ -9,7 +9,9 @@
 APP        := nginx-mgr
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 DOCKER_REPO ?= answgrt/ngx-nova
-LDFLAGS    := -s -w -buildid=
+# 构建戳：面板自更新时用它判断新旧，避免把旧版本装回去
+STAMP      ?= NGXBUILD:$(shell date -u +%Y%m%dT%H%M%SZ)
+LDFLAGS    := -s -w -buildid= -X main.buildStamp=$(STAMP)
 GOFLAGS    := -trimpath
 PLATFORMS  := linux/amd64 linux/arm64
 

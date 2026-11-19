@@ -26,11 +26,12 @@ ARG TARGETARCH
 RUN set -eu; \
     goos="${TARGETOS:-linux}"; \
     goarch="${TARGETARCH:-$(go env GOARCH)}"; \
-    echo ">>> 交叉编译目标: ${goos}/${goarch}"; \
+    stamp="NGXBUILD:$(date -u +%Y%m%dT%H%M%SZ)"; \
+    echo ">>> 交叉编译目标: ${goos}/${goarch}  构建戳: ${stamp}"; \
     GOOS="$goos" GOARCH="$goarch" \
-      go build -trimpath -ldflags "-s -w -buildid=" -o /out/nginx-mgr . ; \
+      go build -trimpath -ldflags "-s -w -buildid= -X main.buildStamp=${stamp}" -o /out/nginx-mgr . ; \
     GOOS="$goos" GOARCH="$goarch" \
-      go build -trimpath -ldflags "-s -w -buildid=" -o /out/tokenctl ./cmd/tokenctl ; \
+      go build -trimpath -ldflags "-s -w -buildid= -X main.buildStamp=${stamp}" -o /out/tokenctl ./cmd/tokenctl ; \
     case "$goarch" in \
       amd64) want=62 ;; \
       arm64) want=183 ;; \

@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"nginx-mgr/internal/model"
 	"nginx-mgr/internal/service"
@@ -20,6 +21,12 @@ import (
 //go:embed web/static/*
 var staticFS embed.FS
 
+// buildStamp 由构建时通过 -ldflags "-X main.buildStamp=NGXBUILD:<UTC时间>" 注入。
+// upgrade-nginx.sh 会从二进制里提取这个标记比较新旧，避免自更新时把旧版本装回去
+// （Release 资产对应 tag，可能落后于镜像/main 构建）。
+// 用固定宽度的时间戳，字符串比较即等价于时间比较。
+var buildStamp = "NGXBUILD:dev"
+
 func main() {
 	r := gin.Default()
 	// 面板自身不反代，不信任任何 X-Forwarded-For，避免限流被伪造 IP 绕过。
@@ -28,6 +35,8 @@ func main() {
 	r.Use(bodyLimit(2 << 20)) // 原始配置编辑上限 2MB
 
 	nginxSvc := service.NewNginxService()
+	// 记录构建戳，既方便 journalctl 核对部署版本，也让链接器保留该变量
+	log.Printf("panel build: %s", buildStamp)
 	// 探测 nginx 是否带 brotli / acme 模块，决定站点模板能写哪些指令
 	model.DetectNginxFeatures()
 	siteSvc := service.NewSiteService()
