@@ -1,0 +1,79 @@
+:root {
+            --bg-dark: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.75);
+            --accent-blue: #38bdf8;
+            --accent-cyan: #22d3ee;
+        }
+        body {
+            background-color: var(--bg-dark);
+            background-image:
+                radial-gradient(circle at 20% 30%, rgba(56, 189, 248, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 80% 70%, rgba(34, 211, 238, 0.05) 0%, transparent 40%);
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+        }
+        [v-cloak] { display: none; }
+        .glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .nav-item { transition: all 0.28s cubic-bezier(0.4, 0, 0.2, 1); }
+        .nav-item.active {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-blue);
+            border-right: 3px solid var(--accent-blue);
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+            transition: all 0.3s ease;
+        }
+        .btn-primary:hover {
+            filter: brightness(1.08);
+            box-shadow: 0 0 22px rgba(56, 189, 248, 0.45);
+        }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.12); border-radius: 10px; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+
+        /* ===== 移动端适配 ===== */
+        html, body { height: 100%; }
+        body {
+            -webkit-tap-highlight-color: transparent;
+            text-rendering: optimizeLegibility;
+        }
+        /* iOS 输入框字号小于 16px 会自动放大页面 */
+        input, select, textarea { font-size: 16px; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+        .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+        .drawer { transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1); will-change: transform; }
+        .drawer-backdrop { transition: opacity 0.24s ease; }
+        /* 底部导航：仅手机显示 */
+        .mobile-tabbar { display: none; }
+        @media (max-width: 767px) {
+            .mobile-tabbar {
+                display: flex;
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 40;
+                background: rgba(15, 23, 42, 0.92);
+                backdrop-filter: blur(18px);
+                border-top: 1px solid rgba(255, 255, 255, 0.08);
+            }
+            .modal-panel {
+                max-height: 92dvh;
+                border-bottom-left-radius: 0 !important;
+                border-bottom-right-radius: 0 !important;
+            }
+            /* 移动端隐藏滚动条，减少视觉噪音 */
+            .scroll-thin::-webkit-scrollbar { width: 0; height: 0; }
+        }
+        @media (hover: none) {
+            /* 触摸设备的点击目标不小于 44px */
+            .tap-target { min-height: 44px; }
+        }
+        .break-anywhere { word-break: break-word; overflow-wrap: anywhere; }

@@ -599,14 +599,12 @@ func main() {
 
 // securityHeaders 给面板自身补一层响应头，降低被嵌入、被嗅探、被降级的风险。
 //
-// 关于 script-src 里的 'unsafe-eval'：本面板前端是 Vue 3 CDN 构建版 + Tailwind Play CDN，
-// 两者都在浏览器里编译模板/生成样式，内部使用 new Function()，没有 'unsafe-eval' 会直接抛
-// EvalError，导致 #app 停在 v-cloak 状态、页面全黑。这是当前前端形态的硬约束。
-// 若后续把模板预编译（或换 runtime-only + 编译期产物、Tailwind 改为构建期产出 CSS），
-// 即可移除 'unsafe-eval'，CSP 也能收紧到 'self' + 明确 CDN 白名单。
+// 脚本已全部本地化（Vue runtime-only + 预编译模板 + 构建期 Tailwind），
+// 因此 script-src 可以收紧到 'self'：没有 CDN、没有内联脚本、没有 'unsafe-eval'。
+// style-src 仍保留 'unsafe-inline'，因为 Vue 会通过 style 绑定写内联样式属性。
 func securityHeaders() gin.HandlerFunc {
 	const csp = "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com https://cdn.tailwindcss.com; " +
+		"script-src 'self'; " +
 		"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
 		"font-src 'self' data: https://cdnjs.cloudflare.com https://fonts.gstatic.com; " +
 		"img-src 'self' data:; " +

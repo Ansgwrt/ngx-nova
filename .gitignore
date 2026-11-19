@@ -14,3 +14,7 @@ nginx-mgr-*
 # 本地环境
 .env
 .DS_Store
+
+# 前端构建依赖与中间产物
+web/build/node_modules/
+web/build/.tailwind.*
