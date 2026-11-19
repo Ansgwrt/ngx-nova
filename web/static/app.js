@@ -288,7 +288,7 @@
                     if (r.status === 'up_to_date') {
                         return {
                             label: '最新修复版',
-                            icon: 'fa-shield-halved',
+                            icon: 'fa-shield-alt',
                             bg: 'bg-emerald-500/15 border-emerald-400/40 text-emerald-300',
                             chip: 'bg-emerald-500/15 text-emerald-200 border-emerald-400/40'
                         };

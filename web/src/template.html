@@ -177,46 +177,48 @@
                         </div>
                     </div>
 
-                    <!-- 版本与安全自检 -->
-                    <div :class="['glass rounded-3xl p-5 md:p-6 border', versionReport.vulnerable ? 'border-red-400/40' : 'border-white/10']">
-                        <div class="flex flex-wrap items-start justify-between gap-3">
-                            <div class="flex items-center space-x-3">
-                                <div class="w-10 h-10 rounded-xl flex items-center justify-center border"
-                                     :class="versionBadge.bg">
+                    <!-- 版本与安全自检（紧凑两行） -->
+                    <div :class="['glass rounded-3xl px-4 py-3 md:px-5 md:py-4 border', versionReport.vulnerable ? 'border-red-400/40' : 'border-white/10']">
+                        <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                            <div class="flex items-center space-x-3 min-w-0">
+                                <div class="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center border" :class="versionBadge.bg">
                                     <i :class="['fas', versionBadge.icon]"></i>
                                 </div>
-                                <div>
-                                    <div class="text-[11px] text-gray-400 uppercase tracking-widest">版本与安全</div>
-                                    <div class="text-white font-bold font-mono text-sm md:text-base">{{ versionReport.installed || '未检测到 Nginx' }}</div>
+                                <div class="min-w-0">
+                                    <div class="text-[10px] text-gray-400 uppercase tracking-widest leading-none">版本与安全</div>
+                                    <div class="text-white font-bold font-mono text-sm leading-tight mt-1">{{ versionReport.installed || '未检测到 Nginx' }}</div>
                                 </div>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span class="px-3 py-1 rounded-full text-[11px] font-semibold border" :class="versionBadge.chip">
+                            <div class="flex flex-wrap items-center gap-1.5 md:gap-2">
+                                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-semibold border" :class="versionBadge.chip">
                                     {{ versionBadge.label }}
                                 </span>
-                                <button @click="showVersionModal = true" class="glass border border-white/10 px-3 py-1.5 rounded-xl text-xs text-gray-200 tap-target">
+                                <button @click="showVersionModal = true"
+                                        class="glass border border-white/10 px-2.5 py-1 rounded-lg text-[11px] text-gray-200 tap-target">
                                     公告详情
                                 </button>
                                 <button @click="upgradeNginx" :disabled="installStatus.is_running"
-                                        class="btn-primary text-white px-4 py-1.5 rounded-xl text-xs font-bold disabled:opacity-50 tap-target">
-                                    <i class="fas fa-shield-halved mr-1.5"></i>{{ versionReport.vulnerable ? '一键修复升级' : '升级到最新' }}
+                                        class="btn-primary text-white px-3 py-1 rounded-lg text-[11px] font-bold disabled:opacity-50 tap-target">
+                                    <i class="fas fa-shield-alt mr-1"></i>{{ versionReport.vulnerable ? '一键修复升级' : '升级到最新' }}
                                 </button>
                             </div>
                         </div>
-                        <p class="mt-3 text-xs leading-relaxed break-anywhere" :class="versionReport.vulnerable ? 'text-red-200' : 'text-gray-400'">
-                            {{ versionReport.summary || '正在读取本机 Nginx 版本…' }}
-                        </p>
-                        <div v-if="versionReport.affected && versionReport.affected.length" class="mt-3 flex flex-wrap gap-1.5">
-                            <span v-for="adv in versionReport.affected.slice(0, 5)" :key="adv.cve"
-                                  class="px-2 py-1 rounded-lg bg-red-500/10 border border-red-400/30 text-[10px] text-red-200 font-mono">
-                                {{ adv.cve }}
+                        <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-relaxed">
+                            <span class="break-anywhere" :class="versionReport.vulnerable ? 'text-red-200' : 'text-gray-400'">
+                                {{ versionReport.summary || '正在读取本机 Nginx 版本…' }}
                             </span>
-                            <span v-if="versionReport.affected.length > 5" class="px-2 py-1 text-[10px] text-gray-400">
-                                +{{ versionReport.affected.length - 5 }} 条
+                            <span v-if="versionReport.affected && versionReport.affected.length" class="flex flex-wrap gap-1">
+                                <span v-for="adv in versionReport.affected.slice(0, 5)" :key="adv.cve"
+                                      class="px-1.5 py-0.5 rounded bg-red-500/10 border border-red-400/30 text-[10px] text-red-200 font-mono">
+                                    {{ adv.cve }}
+                                </span>
+                                <span v-if="versionReport.affected.length > 5" class="text-[10px] text-gray-400">
+                                    +{{ versionReport.affected.length - 5 }} 条
+                                </span>
                             </span>
-                        </div>
-                        <div v-else class="mt-3 text-[11px] text-gray-500">
-                            已比对 {{ advisoryCount }} 条官方公告 · 建议版本 <span class="font-mono text-gray-300">{{ versionReport.upgrade_to || '—' }}</span>
+                            <span v-else class="text-gray-500">
+                                已比对 {{ advisoryCount }} 条公告 · 建议 <span class="font-mono text-gray-300">{{ versionReport.upgrade_to || '—' }}</span>
+                            </span>
                         </div>
                     </div>
 
@@ -874,7 +876,7 @@
             </main>
 
             <!-- 手机端底部导航 -->
-            <nav class="mobile-tabbar safe-bottom">
+            <nav class="mobile-tabbar">
                 <button v-for="item in mobileTabs" :key="item.id" @click="onMobileTab(item)"
                         :class="['flex-1 flex flex-col items-center justify-center gap-1 py-2 text-[10px] transition',
                                  currentTab === item.id ? 'text-blue-300' : 'text-gray-500']">
@@ -1129,7 +1131,7 @@
             <div class="glass modal-panel rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl border border-white/10 flex flex-col max-h-[92dvh] md:max-h-[88vh]">
                 <div class="px-5 py-4 md:px-8 md:py-6 border-b border-white/5 flex justify-between items-center shrink-0">
                     <h3 class="text-lg md:text-2xl font-bold text-white flex items-center space-x-2 md:space-x-3 min-w-0">
-                        <i class="fas fa-shield-halved text-emerald-300"></i><span class="truncate">版本与安全公告</span>
+                        <i class="fas fa-shield-alt text-emerald-300"></i><span class="truncate">版本与安全公告</span>
                     </h3>
                     <button @click="showVersionModal = false" class="text-gray-500 hover:text-white transition p-2 -mr-2 shrink-0"><i class="fas fa-times text-xl"></i></button>
                 </div>

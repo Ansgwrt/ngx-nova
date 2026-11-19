@@ -46,8 +46,13 @@
         }
         /* iOS 输入框字号小于 16px 会自动放大页面 */
         input, select, textarea { font-size: 16px; }
-        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-        .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+        /* 安全区：仅在移动端生效，并且用 calc 叠加原有内边距。
+           之前直接写 padding-top/ bottom 会把 Tailwind 的 p-* 覆盖成 0，
+           导致桌面端 LOGO 顶到边缘（已踩过）。 */
+        @media (max-width: 767px) {
+            .safe-top { padding-top: calc(1.25rem + env(safe-area-inset-top, 0px)); }
+            .safe-bottom { padding-bottom: calc(1.25rem + env(safe-area-inset-bottom, 0px)); }
+        }
         .drawer { transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1); will-change: transform; }
         .drawer-backdrop { transition: opacity 0.24s ease; }
         /* 底部导航：仅手机显示 */
@@ -63,6 +68,7 @@
                 background: rgba(15, 23, 42, 0.92);
                 backdrop-filter: blur(18px);
                 border-top: 1px solid rgba(255, 255, 255, 0.08);
+                padding-bottom: env(safe-area-inset-bottom, 0px);
             }
             .modal-panel {
                 max-height: 92dvh;
