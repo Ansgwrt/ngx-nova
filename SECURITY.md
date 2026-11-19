@@ -80,6 +80,9 @@ nginx -v && nginx -t && systemctl is-active nginx
 1. **`auth_token.json` 历史提交**：文件已从当前版本移除，但旧 commit 仍在 Git 历史中。仓库公开的话，历史里的 token 哈希应视为已泄漏（哈希本身不可逆，但建议更换令牌并考虑 `git filter-repo` 清理历史）。
 2. **首次登录即设置令牌**：面板在"未设置令牌"状态下允许任何能访问 8083 的人完成初始设置。请先 `ufw`/安全组限制来源，或先在本机完成初始化。
 3. **前端依赖 CDN**：Vue / Tailwind / Font Awesome 从公网 CDN 加载，CSP 已限定来源域名。若需完全离线，建议把这三个资源本地化（`web/static/vendor/`）后调整 CSP 的 `script-src`/`style-src`。
+4. **CSP 中的 `'unsafe-eval'`**：前端使用 Vue 3 CDN 构建版（运行时编译模板）与 Tailwind Play CDN（浏览器内生成 CSS），两者内部都调用 `new Function()`。缺少 `'unsafe-eval'` 会抛 `EvalError`，`#app` 停留在 `v-cloak` 状态、整页空白——这个坑实际踩过一次。
+   取舍：保留 `'unsafe-eval'` 换取可用性，其余指令仍保持收紧（`frame-ancestors 'none'`、`base-uri 'self'`、`connect-src 'self'`、无 `unsafe-eval` 之外的放宽）。
+   彻底收紧的路径：模板改为构建期预编译（或改 runtime-only + render 函数）、Tailwind 改为构建期产出静态 CSS，之后即可移除 `'unsafe-eval'`。
 4. **ACME 模块**：站点模板历史上依赖 `acme_certificate` 指令，而官方 nginx 源码包**不包含** ACME 模块（`acme_certificate` 来自第三方模块）。当前实现会先探测 `nginx -V`：
    - 有 ACME 模块：渲染 `acme_certificate letsencrypt`，行为与旧版一致；
    - 没有：渲染自管证书路径 `<conf>/ssl/<domain>.crt|.key`，需要你把证书放到对应位置，否则 `nginx -t` 会失败并自动回滚。
