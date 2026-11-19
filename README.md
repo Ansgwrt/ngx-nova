@@ -132,6 +132,8 @@ docker compose up -d
 
 镜像内 nginx 同样由官方源码按固定校验值编译，非发行版自带的旧版本。
 
+> CI 默认推送到 **GHCR**（`ghcr.io/ansgwrt/ngx-nova`），用的是仓库内置 `GITHUB_TOKEN`，无需任何手配密钥；配置了 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` 后才会额外推 Docker Hub。GHCR 包首次创建后需在 Packages 设置里改为 Public 才能匿名拉取。
+
 ---
 
 ## 🧱 构建
