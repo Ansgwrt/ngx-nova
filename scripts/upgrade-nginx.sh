@@ -16,9 +16,10 @@
 #   ./upgrade-nginx.sh --install-rust     # 动态模块需要 Rust 时自动安装
 #   ./upgrade-nginx.sh --panel            # 同时更新面板二进制（从镜像提取，默认 answgrt/ngx-nova:latest）
 #   ./upgrade-nginx.sh --panel --panel-image ghcr.io/ansgwrt/ngx-nova:latest
-#   ./upgrade-nginx.sh --panel --panel-release v1.0.0   # 指定 Release 版本（二进制安装首选）
+#   ./upgrade-nginx.sh --panel --panel-release v1.0.4   # 指定 Release 版本（显式指定时优先走 Release）
 #   ./upgrade-nginx.sh --panel --panel-allow-older      # 允许降级（别名 --panel-force）
 #   ./upgrade-nginx.sh --panel --panel-src /root/nginx-mgr-linux-arm64   # 离线：用本地文件
+#   ./upgrade-nginx.sh --fix-ssl-zone     # 把各处的 ssl_session_cache shared:SSL 尺寸归一化到主配置
 #
 # 退出码：0 成功 / 1 参数或环境问题 / 2 编译或验证失败（已回滚）
 set -Eeuo pipefail
@@ -51,6 +52,13 @@ PANEL_EXTRACT_DIR=""
 # 二进制安装场景的首选来源：GitHub Release 资产（不需要 docker）
 PANEL_REPO="${PANEL_REPO:-Ansgwrt/ngx-nova}"
 PANEL_RELEASE="${PANEL_RELEASE:-latest}"
+# 用户显式给了 --panel-release 时，Release 优先于镜像（镜像跟随 main，可能比该 tag 新，
+# 但不该覆盖用户的显式意图）
+PANEL_RELEASE_EXPLICIT=0
+# 共享内存区体检：发现同名 zone 多个尺寸时，是否按主配置自动归一化
+FIX_SSL_ZONE=0
+# 归一化时改过的配置文件备份目录（供结尾汇总打印）
+SSLZONE_BACKUP=""
 # 面板二进制路径不写死：真实路径由 systemd 单元的 ExecStart 决定。
 # 踩过：单元指向 /opt/nginx-mgr/nginx-mgr，而脚本硬编码 /usr/local/bin/nginx-mgr，
 # 结果替换了一个根本没被使用的文件 —— 服务重启后仍是旧二进制，健康检查还返回 200。
@@ -78,7 +86,7 @@ on_error() {
 }
 trap on_error ERR
 
-usage() { sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -89,8 +97,9 @@ while [[ $# -gt 0 ]]; do
     --panel)      PANEL=1; shift ;;
     --panel-src)  PANEL=1; PANEL_SRC="${2:?缺少路径}"; shift 2 ;;
     --panel-image) PANEL=1; PANEL_IMAGES=("${2:?缺少镜像名}"); shift 2 ;;
-    --panel-release) PANEL=1; PANEL_RELEASE="${2:?缺少版本，如 v1.0.0}"; shift 2 ;;
+    --panel-release) PANEL=1; PANEL_RELEASE="${2:?缺少版本，如 v1.0.4}"; PANEL_RELEASE_EXPLICIT=1; shift 2 ;;
     --panel-allow-older|--panel-force) ALLOW_OLDER=1; shift ;;
+    --fix-ssl-zone) FIX_SSL_ZONE=1; shift ;;
     -h|--help)    usage ;;
     *) die "未知参数: $1（-h 查看用法）" ;;
   esac
@@ -165,6 +174,78 @@ check_nginx() {
     return 0
   fi
   NGINX_UP_TO_DATE=0
+}
+
+# ------------------------------------------- 共享内存区体检（ssl_session_cache）
+# nginx 里同名共享内存区整份配置只能声明一次，多处声明时 size 必须完全一致，否则：
+#   [emerg] the size 10485760 of shared memory zone "SSL" conflicts with
+#           already declared size 31457280 in /etc/nginx/sites-enabled/<domain>:45
+# 面板 v1.0.4 起不再把 ssl_session_cache 写进站点模板，但历史站点里可能还留着，
+# 主配置一改尺寸就会复发。这里做体检；给 --fix-ssl-zone 时按主配置尺寸归一化。
+# 返回 0 = 无冲突（或已修复），1 = 有冲突且未修复。
+ssl_zone_preflight() {
+  local conf_dir; conf_dir="$(dirname "$NGINX_CONF")"
+  local hits sizes n main_size
+  hits="$(grep -rnE '^[[:space:]]*ssl_session_cache[[:space:]]+shared:SSL:' "$conf_dir" 2>/dev/null || true)"
+  [[ -n "$hits" ]] || return 0
+
+  sizes="$(printf '%s\n' "$hits" | sed -nE 's/.*shared:SSL:([0-9]+[kKmMgG]?).*/\1/p' | sort -u)"
+  n="$(printf '%s\n' "$sizes" | grep -c . || true)"
+  if [[ "${n:-0}" -le 1 ]]; then
+    ok "共享内存区尺寸一致: shared:SSL:$(printf '%s' "$sizes")"
+    return 0
+  fi
+
+  warn "同名共享内存区 shared:SSL 出现多个尺寸，nginx -t 会直接失败："
+  printf '%s\n' "$hits" | sed 's/^/     /' | tee -a "$LOG"
+
+  main_size="$(printf '%s\n' "$hits" | grep -E "^${NGINX_CONF}:" \
+    | sed -nE 's/.*shared:SSL:([0-9]+[kKmMgG]?).*/\1/p' | head -1 || true)"
+
+  if [[ $FIX_SSL_ZONE -eq 0 ]]; then
+    warn "把它们统一成同一个尺寸即可（面板 v1.0.4+ 的基线是 10m）"
+    if [[ -n "$main_size" ]]; then
+      warn "  主配置当前: shared:SSL:${main_size}"
+    fi
+    warn "  或执行: $(basename "$0") --fix-ssl-zone（按主配置归一化，自动备份）"
+    return 1
+  fi
+  [[ -n "$main_size" ]] || die "--fix-ssl-zone 需要主配置 ${NGINX_CONF} 里先声明 ssl_session_cache shared:SSL:<size>"
+
+  # 只动"尺寸与主配置不同"的文件；主配置本身永远不改
+  local targets
+  targets="$(printf '%s\n' "$hits" \
+    | sed -nE 's#^([^:]+):[0-9]+:.*shared:SSL:([0-9]+[kKmMgG]?).*#\1 \2#p' \
+    | awk -v want="$main_size" '$2 != want { print $1 }' | sort -u)"
+  if [[ -z "$targets" ]]; then
+    ok "各文件尺寸已与主配置一致（shared:SSL:${main_size}），无需改动"
+    return 0
+  fi
+
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log "[预演] 将把下列文件里的 shared:SSL 归一化为 ${main_size}："
+    printf '%s\n' "$targets" | sed 's/^/     /' | tee -a "$LOG"
+    return 1
+  fi
+
+  local backup="${BACKUP_ROOT}/sslzone-${STAMP}" f changed=0
+  mkdir -p "$backup"
+  SSLZONE_BACKUP="$backup"
+  while IFS= read -r f; do
+    [[ -n "$f" && -f "$f" ]] || continue
+    cp -a "$f" "${backup}/$(printf '%s' "${f#/}" | tr '/' '_')"
+    sed -i -E "s/(ssl_session_cache[[:space:]]+shared:SSL:)[0-9]+[kKmMgG]?;/\1${main_size};/" "$f"
+    changed=$((changed + 1))
+  done <<< "$targets"
+  ok "已把 ${changed} 个文件归一化为 shared:SSL:${main_size}（备份 ${backup}）"
+
+  if "$NGINX_BIN" -t >/dev/null 2>&1; then
+    ok "nginx -t 通过"
+    return 0
+  fi
+  warn "nginx -t 仍失败，请手动检查（未自动回滚）："
+  "$NGINX_BIN" -t 2>&1 | tail -5 | tee -a "$LOG"
+  return 1
 }
 
 # ------------------------------------------------- 从 nginx -V 继承编译参数
@@ -791,16 +872,33 @@ update_panel() {
     [[ -n "$src" ]] && tk="${src%/*}/tokenctl-linux-${ARCH}"
   fi
 
-  # 2) 没有本地文件：有 docker 走镜像（跟随 main 最新），否则走 Release（二进制安装场景）
+  # 2) 没有本地文件：显式 --panel-release 先走 Release（尊重用户意图）；
+  #    未指定时才让镜像优先（镜像跟随 main 构建，通常比 tag 对应的 Release 新）
   if [[ -z "$src" ]]; then
     if [[ $DRY_RUN -eq 1 ]]; then
-      log "[预演] 面板来源优先级：本地文件 → GitHub Release(${PANEL_RELEASE}) → 镜像(${PANEL_IMAGES[*]})"
+      if [[ $PANEL_RELEASE_EXPLICIT -eq 1 ]]; then
+        log "[预演] 面板来源优先级：本地文件 → GitHub Release(${PANEL_RELEASE})（显式指定）→ 镜像(${PANEL_IMAGES[*]})"
+      else
+        log "[预演] 面板来源优先级：本地文件 → 镜像(${PANEL_IMAGES[*]}) → GitHub Release(${PANEL_RELEASE})"
+      fi
       log "[预演] 将备份 ${PANEL_BIN} 并 restart ${PANEL_UNIT}"
       return 0
     fi
 
-    # 有 docker 时优先用镜像：镜像跟随 main 构建，通常比 tag 对应的 Release 新
-    if command -v docker >/dev/null 2>&1; then
+    if [[ $PANEL_RELEASE_EXPLICIT -eq 1 ]]; then
+      # 用户点了版本号，就按版本号装；镜像只作兜底
+      if fetch_panel_from_release; then
+        src="${PANEL_EXTRACT_DIR}/nginx-mgr"
+        tk="${PANEL_EXTRACT_DIR}/tokenctl"
+        ok "面板来源: GitHub Release(${PANEL_RELEASE})，按 --panel-release 显式指定"
+      elif command -v docker >/dev/null 2>&1; then
+        warn "Release(${PANEL_RELEASE}) 取不到，回退镜像：构建戳可能比该 tag 更新"
+        if extract_panel_from_image; then
+          src="${PANEL_EXTRACT_DIR}/nginx-mgr"
+          tk="${PANEL_EXTRACT_DIR}/tokenctl"
+        fi
+      fi
+    elif command -v docker >/dev/null 2>&1; then
       if extract_panel_from_image; then
         src="${PANEL_EXTRACT_DIR}/nginx-mgr"
         tk="${PANEL_EXTRACT_DIR}/tokenctl"
@@ -810,8 +908,8 @@ update_panel() {
     fi
   fi
 
-  # 3) 镜像没拿到（无 docker / 拉取失败 / 架构不符）→ 退回 Release
-  if [[ -z "$src" ]] && fetch_panel_from_release; then
+  # 3) 未显式指定版本，且镜像没拿到（无 docker / 拉取失败 / 架构不符）→ 退回 Release
+  if [[ -z "$src" && $PANEL_RELEASE_EXPLICIT -eq 0 ]] && fetch_panel_from_release; then
     src="${PANEL_EXTRACT_DIR}/nginx-mgr"
     tk="${PANEL_EXTRACT_DIR}/tokenctl"
     warn "Release 资产对应 tag ${PANEL_RELEASE}，如需 main 上的最新构建请用 --panel-src 或镜像"
@@ -944,6 +1042,14 @@ update_panel() {
         warn "运行中的构建戳 ${rs} 与目标 ${new_stamp} 不一致"
       fi
       ok "运行态确认: ${PANEL_BIN} 已是新二进制${rs:+（${rs}）}"
+      # 面板换完了，顺手确认 nginx 配置仍能通过 —— 站点操作失败时能第一时间定位
+      if "$NGINX_BIN" -t >/dev/null 2>&1; then
+        ok "nginx -t 通过"
+      else
+        warn "nginx -t 失败：面板已更新，但站点增删改会继续报错"
+        "$NGINX_BIN" -t 2>&1 | tail -5 | tee -a "$LOG"
+        ssl_zone_preflight || true
+      fi
       [[ -n "$PANEL_EXTRACT_DIR" ]] && rm -rf "$PANEL_EXTRACT_DIR"
       return 0
     fi
@@ -959,6 +1065,10 @@ main() {
   log "=== 升级开始 ==="
   detect_arch
   check_nginx
+
+  # 共享内存区体检：同名 zone 多个尺寸时任何一次 nginx -t 都会失败。
+  # 只提示不阻塞（面板升级本身可能就是修复手段），--fix-ssl-zone 才动配置。
+  ssl_zone_preflight || true
 
   if [[ ${NGINX_UP_TO_DATE:-0} -eq 1 ]]; then
     log "nginx 已是 ${TARGET_VERSION}，跳过编译"
@@ -1007,6 +1117,9 @@ main() {
     ok "=== 升级完成：${CURRENT_VERSION} → ${TARGET_VERSION}（${ARCH}）==="
   fi
   ok "备份目录: ${BACKUP_DIR:-无（未做改动）}"
+  if [[ -n "${SSLZONE_BACKUP:-}" ]]; then
+    ok "配置归一化备份: ${SSLZONE_BACKUP}"
+  fi
   ok "日志文件: ${LOG}"
 
   # 面板是独立组件，默认不动；不提示的话很容易误以为"升级脚本跑完就全好了"
