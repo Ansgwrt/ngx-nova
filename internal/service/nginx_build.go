@@ -559,6 +559,11 @@ http {
     # 隐藏版本号，避免信息泄露
     server_tokens off;
 
+    # TLS 会话缓存：shared:SSL 这个共享内存区全份配置只能声明一次，
+    # 站点模板不再注入该指令，避免与本站尺寸不一致时 nginx -t 直接 emerg。
+    ssl_session_cache   shared:SSL:10m;
+    ssl_session_timeout 1d;
+
     log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
                       '$status $body_bytes_sent "$http_referer" '
                       '"$http_user_agent" "$http_x_forwarded_for" "$host"';

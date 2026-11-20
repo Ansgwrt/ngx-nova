@@ -51,6 +51,13 @@ func TestSiteTemplatesRenderHardening(t *testing.T) {
 		if !model.BrotliEnabled() && strings.Contains(out, "brotli on;") {
 			t.Errorf("%s 在未编译 brotli 模块时仍输出了 brotli 指令", name)
 		}
+		// 回归：站点配置里不允许出现 ssl_session_cache。
+		// 同名共享内存区（shared:SSL）整份配置只能声明一次且尺寸一致，
+		// 站点级重复声明会和主配置撞尺寸，nginx -t 报
+		// "[emerg] the size ... conflicts with already declared size ..."。
+		if strings.Contains(out, "ssl_session_cache") {
+			t.Errorf("%s 在站点配置里声明了 ssl_session_cache，会与 http{} 的同名 zone 冲突", name)
+		}
 	}
 }
 

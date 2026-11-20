@@ -31,6 +31,8 @@
 
 > 举例：仓库原先固定的 `1.28.0` 命中 **32 条**公告（其中 **4 条 major**）；升级到 `1.30.7` 后命中 **0 条**。
 
+> TLS 会话缓存 `shared:SSL` 属于全局共享内存区，只在 `http{}` 里声明一次（裸机基线见 `internal/service/nginx_build.go`，容器见 `docker/nginx.conf`），站点模板不再注入。若你在自定义的 `nginx.conf` 里改了尺寸（如 `30m`），务必保证整份配置里只有这一个尺寸——同名 zone 重复声明且尺寸不同，`nginx -t` 会直接 `[emerg] the size ... conflicts with already declared size ...`。
+
 ### 版本自检接口
 
 ```bash

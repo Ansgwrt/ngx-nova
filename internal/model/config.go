@@ -38,15 +38,19 @@ type SiteConfig struct {
 // 说明：
 //   - 只允许 TLS1.2/1.3，关闭 session ticket，规避 ticket 密钥复用类问题；
 //   - server_tokens off 隐藏版本号，避免按版本号定点利用；
-//   - HSTS 不带 includeSubDomains / preload，避免误伤同域下未启用 HTTPS 的子域。
+//   - HSTS 不带 includeSubDomains / preload，避免误伤同域下未启用 HTTPS 的子域；
+//   - 这里刻意不写 ssl_session_cache / ssl_session_timeout：同名共享内存区
+//     （shared:SSL）整份配置只能声明一次，尺寸必须处处一致。站点级再声明一次，
+//     一旦主配置用了别的尺寸（例如 30m），nginx -t 直接
+//     `[emerg] the size ... conflicts with already declared size ...`，
+//     面板每次建站都会失败。会话缓存统一由 http{} 基线声明，见
+//     internal/service/nginx_build.go 与 docker/nginx.conf。
 const TLSHardening = `    # ===== 安全基线（ngx-nova 自动注入）=====
     server_tokens off;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:10m;
     ssl_session_tickets off;
 
     add_header X-Content-Type-Options nosniff always;

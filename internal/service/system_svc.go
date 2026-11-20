@@ -35,7 +35,7 @@ func NewSystemService(notificationSvc *NotificationService, trafficMgr *TrafficU
 func (s *SystemService) Reload() error {
 	sbin := model.SbinPath()
 	if out, err := executor.ExecuteSimple(sbin, "-t"); err != nil {
-		return fmt.Errorf("Nginx 配置测试失败: %s", strings.TrimSpace(out))
+		return fmt.Errorf("Nginx 配置测试失败: %s%s", strings.TrimSpace(out), zoneConflictHint(out))
 	}
 
 	if _, err := executor.ExecuteSimple("systemctl", "reload", "nginx"); err == nil {
@@ -55,6 +55,18 @@ func (s *SystemService) Reload() error {
 		return fmt.Errorf("Nginx 启动失败: %s", strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// zoneConflictHint 把 nginx -t 里"同名共享内存区尺寸冲突"的 emerg 翻译成可执行的修复建议。
+// 这类错误的典型来源是 ssl_session_cache（shared:SSL）与 limit_req_zone / limit_conn_zone：
+// 同名 zone 整份配置只能声明一次，多处声明时 size 必须完全一致，否则 nginx 直接拒绝加载。
+func zoneConflictHint(out string) string {
+	if !strings.Contains(out, "conflicts with already declared size") {
+		return ""
+	}
+	return "\n提示：同名共享内存区（如 ssl_session_cache shared:SSL、limit_req_zone）整份配置只能声明一次，" +
+		"重复声明时 size 必须完全一致。请把主配置与站点里的尺寸统一；" +
+		"v1.0.4 起站点模板不再注入 ssl_session_cache，重新创建或编辑站点即可消除该冲突。"
 }
 
 // nginxPid 读取 pid 文件并确认进程仍存活，返回 0 表示未运行。
