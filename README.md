@@ -41,7 +41,7 @@ curl -s http://127.0.0.1:8083/api/v1/system/version -H "Authorization: Bearer <t
 
 返回当前版本、所属分支、受影响公告列表（CVE / 严重级别 / 影响区间 / 修复区间）与建议升级版本。
 
-### 升级
+### 面板内一键升级
 
 面板「控制中心 → 版本与安全 → 一键修复升级」，或：
 
@@ -52,6 +52,8 @@ curl -X POST http://127.0.0.1:8083/api/v1/system/upgrade \
 ```
 
 若现有 nginx 编译过第三方模块（`--add-module`，如 acme / brotli），接口会拒绝并在 `hint` 里说明——因为官方源码构建不含这些模块。确认覆盖后追加 `"force":true`。
+
+> 想脱离面板、脚本化升级（保留第三方模块 + 面板自更新 + 失败回滚），见下面的「升级与回滚」。
 
 > 证书说明：检测到 ACME 模块时站点使用 `acme_certificate` 自动签发；没有时使用 `<conf>/ssl/<domain>.crt|.key`，需自行放置证书。
 
@@ -135,6 +137,76 @@ docker compose up -d
 镜像内 nginx 同样由官方源码按固定校验值编译，非发行版自带的旧版本。
 
 > CI 默认推送到 **GHCR**（`ghcr.io/ansgwrt/ngx-nova`），用的是仓库内置 `GITHUB_TOKEN`，无需任何手配密钥；配置了 `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` 后才会额外推 Docker Hub。GHCR 包首次创建后需在 Packages 设置里改为 Public 才能匿名拉取。
+
+---
+
+## ⬆️ 升级与回滚（`scripts/upgrade-nginx.sh`）
+
+不依赖面板的升级工具，适合脚本化运维、批量机器，以及面板自身也要跟着升级的场景。
+它只替换二进制与动态模块，**不执行 `make install`，不覆盖任何站点配置**。
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Ansgwrt/ngx-nova/main/scripts/upgrade-nginx.sh
+chmod +x upgrade-nginx.sh
+
+sudo bash upgrade-nginx.sh -n     # 预演：架构、继承的编译参数、模块、加固参数，不改任何东西
+sudo bash upgrade-nginx.sh -y     # 真正执行（nginx 已是最新时只更新面板，如果加了 --panel）
+```
+
+### 常用参数
+
+| 参数 | 说明 |
+|---|---|
+| `-n` / `-y` | 预演 / 非交互 |
+| `-v 1.31.9` | 指定目标版本（默认 stable 1.30.7） |
+| `--install-rust` | 动态模块（如 nginx-acme）需要 Rust 时自动安装 |
+| `--panel` | 顺带更新面板（`nginx-mgr` + `tokenctl`） |
+| `--panel-release v1.0.4` | 面板指定 Release 版本（显式指定时 Release 优先，镜像只兜底） |
+| `--panel-src ./nginx-mgr-linux-arm64` | 离线：用本地文件（也可直接给 URL） |
+| `--panel-image <镜像>` | 指定镜像 |
+| `--panel-allow-older` | 允许降级（别名 `--panel-force`） |
+| `--fix-ssl-zone` | 把各文件里 `ssl_session_cache shared:SSL:<size>` 归一化到主配置尺寸 |
+
+### 面板二进制来源优先级
+
+1. 本地文件（脚本同目录 / `./` / `/root/` 下的 `nginx-mgr-linux-<arch>`）
+2. `--panel-release` 显式指定 → GitHub Release
+3. 容器镜像（仅当机器有 docker；镜像跟随 main，通常比 tag 对应的 Release 新）
+4. GitHub Release（未显式指定版本时的兜底）
+
+安装前用构建戳（`NGXBUILD:<UTC>`）比对，**待装更旧一律拒绝**，避免把旧前端/旧修复无声地装回去。
+
+### 做过的安全检查
+
+- 架构自适应：`x86_64 → amd64`、`aarch64 → arm64`、`armv7l → armv7`；二进制读 ELF 头 `e_machine` 断言，不依赖 `file` 命令
+- 继承而非重写编译参数：从 `nginx -V` 取全部参数，只替换优化项，`-L/-I` 原样保留；有动态模块时自动切 `-fPIC` 并去掉 `-pie`
+- 先验证后替换：新版先跑 `nginx -t`，通过才换二进制；失败只回滚 `.so`
+- 升级后强制 `restart`（reload 不换 master 内存镜像），并用 `/proc/<pid>/exe` 与磁盘 inode 比对确认运行态
+- 共享内存区体检：同名 zone（`ssl_session_cache shared:SSL` 等）出现多个尺寸时直接列 `文件:行`，否则任何一次 `nginx -t` 都会失败
+- 备份：`/root/nginx_backups/pre-upgrade-<旧>-to-<新>-<时间戳>/`
+
+### 验收（三条缺一不可）
+
+```bash
+nginx -t
+systemctl is-active nginx nginx-mgr
+
+PID=$(systemctl show -p MainPID --value nginx-mgr)
+stat -Lc '%d:%i' /proc/$PID/exe; stat -Lc '%d:%i' /usr/local/bin/nginx-mgr   # inode 必须相同
+journalctl -u nginx-mgr -n 50 --no-pager | grep -o 'panel build: NGXBUILD:[0-9TZ]*' | tail -1
+```
+
+### 回滚
+
+脚本收尾会打印备份目录与回滚命令，形如：
+
+```bash
+cp -a /root/nginx_backups/panel-<时间戳>/nginx-mgr.bin /usr/local/bin/nginx-mgr.new \
+  && mv -f /usr/local/bin/nginx-mgr.new /usr/local/bin/nginx-mgr \
+  && systemctl restart nginx-mgr
+```
+
+> 回滚必须用 `mv`：`cp` 直接覆盖正在执行的二进制会报 `Text file busy`，回滚静默失败。
 
 ---
 
