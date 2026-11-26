@@ -24,6 +24,10 @@ func NewSiteService() *SiteService {
 }
 
 func (s *SiteService) CreateSite(config model.SiteConfig) error {
+	if err := ValidateDomain(config.Domain); err != nil {
+		return err
+	}
+
 	var tmplName string
 	switch config.Type {
 	case "proxy":
@@ -38,6 +42,13 @@ func (s *SiteService) CreateSite(config model.SiteConfig) error {
 		tmplName = "redirect.tmpl"
 	default:
 		return fmt.Errorf("不支持的站点类型: %s", config.Type)
+	}
+
+	// 四类模板都监听 443 并引用证书文件：写盘前先确保 ssl 目录与证书就位。
+	// 缺这一步时 nginx -t 会以 "cannot load certificate ... No such file or directory"
+	// 失败，随后面板按失败回滚，用户只看到一句没有上下文的 emerg。
+	if _, err := EnsureSiteCert(config.Domain); err != nil {
+		return err
 	}
 
 	funcMap := template.FuncMap{

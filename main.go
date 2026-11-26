@@ -39,6 +39,13 @@ func main() {
 	log.Printf("panel build: %s", buildStamp)
 	// 探测 nginx 是否带 brotli / acme 模块，决定站点模板能写哪些指令
 	model.DetectNginxFeatures()
+	// 自管证书目录必须存在：没有 ACME 模块时站点模板固定引用 $ConfDir/ssl/<domain>.crt|.key，
+	// 目录缺失会让每一次 HTTPS 建站都倒在 nginx -t 上。这里建一次，失败只记日志不阻断启动。
+	if err := service.EnsureSSLDir(); err != nil {
+		log.Printf("警告: %v", err)
+	} else {
+		log.Printf("证书目录就绪: %s (acme=%v)", service.CertDir(), model.ACMEEnabled())
+	}
 	siteSvc := service.NewSiteService()
 	streamSvc := service.NewStreamService()
 	notificationSvc := service.NewNotificationService()
@@ -215,6 +222,13 @@ func main() {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
+		// 先补 HTTPS 前置条件（ssl 目录 + 证书），顺便拿到"是否新生成了自签占位证书"用于前端提示。
+		// 域名非法（含路径穿越字符）在这里就被挡掉。
+		certCreated, certErr := service.EnsureSiteCert(config.Domain)
+		if certErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": certErr.Error()})
+			return
+		}
 		if err := siteSvc.CreateSite(config); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -225,7 +239,12 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "rolled_back": true})
 			return
 		}
-		c.JSON(http.StatusCreated, gin.H{"message": "站点创建成功"})
+		resp := gin.H{"message": "站点创建成功"}
+		if warn := service.SiteCertWarning(config.Domain, certCreated); warn != "" {
+			resp["warning"] = warn
+			log.Printf("站点 %s: %s", config.Domain, warn)
+		}
+		c.JSON(http.StatusCreated, resp)
 	})
 
 	apiV1.PUT("/sites/:domain", func(c *gin.Context) {
@@ -246,6 +265,11 @@ func main() {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
+		certCreated, certErr := service.EnsureSiteCert(config.Domain)
+		if certErr != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": certErr.Error()})
+			return
+		}
 		if err := siteSvc.CreateSite(config); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
@@ -256,7 +280,12 @@ func main() {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "rolled_back": true})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"message": "站点更新成功"})
+		resp := gin.H{"message": "站点更新成功"}
+		if warn := service.SiteCertWarning(config.Domain, certCreated); warn != "" {
+			resp["warning"] = warn
+			log.Printf("站点 %s: %s", config.Domain, warn)
+		}
+		c.JSON(http.StatusOK, resp)
 	})
 
 	apiV1.PUT("/sites/:domain/raw", func(c *gin.Context) {

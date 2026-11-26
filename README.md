@@ -140,6 +140,49 @@ docker compose up -d
 
 ---
 
+## 🔒 HTTPS 证书（本机 nginx 没有 ACME 模块时）
+
+面板编译的 nginx 只带 `http_ssl_module`，没有 `acme_certificate` 指令，因此站点模板走**固定证书路径**：
+
+```
+<conf 目录>/ssl/<域名>.crt     # 例如 /etc/nginx/ssl/example.com.crt
+<conf 目录>/ssl/<域名>.key
+```
+
+`<conf 目录>` 由面板自动探测（`/etc/nginx` 或 `/usr/local/nginx/conf`）。
+
+**v1.0.5 起**这套路径不再需要手工准备：
+
+- 面板启动时会 `mkdir -p` 证书目录，日志里有 `证书目录就绪: ... (acme=false)`；
+- 保存站点前先检查 `<域名>.crt` / `<域名>.key`，缺失就**自动生成一张自签占位证书**（RSA 2048、CN+SAN 为站点域名、有效期一年、私钥 0600），保证 `nginx -t` 能过、站点能落地；接口返回里会带 `warning` 字段说明这件事；
+- 域名在写盘前做格式校验（只接受 `example.com` / `*.example.com`），挡掉 `../` 这类能逃出配置目录的输入；
+- 万一仍然撞上 `cannot load certificate ... BIO_new_file() failed`，错误信息会自动翻译成"缺哪个文件、放哪里、怎么补"，不再只甩一句 nginx emerg。
+
+自签证书只解决"能启动"，公网访问必须换成真证书：
+
+```bash
+# 方案一：Cloudflare Origin Certificate（域名托管在 CF 时最省事）
+#   CF 面板 → SSL/TLS → Origin Server → Create Certificate
+#   把证书与私钥分别存成下面两个文件（Cloudflare 的 SSL 模式设为 Full (strict)）
+install -m 644 origin.pem /etc/nginx/ssl/example.com.crt
+install -m 600 origin.key /etc/nginx/ssl/example.com.key
+
+# 方案二：Let's Encrypt DNS-01（不占用 80 端口，Cloudflare 后面的机器也能签）
+curl https://get.acme.sh | sh -s email=you@example.com
+export CF_Token="<Cloudflare API Token>"
+~/.acme.sh/acme.sh --issue --dns dns_cf -d example.com -d '*.example.com'
+~/.acme.sh/acme.sh --install-cert -d example.com \
+  --key-file       /etc/nginx/ssl/example.com.key \
+  --fullchain-file /etc/nginx/ssl/example.com.crt \
+  --reloadcmd      "systemctl reload nginx"
+
+nginx -t && systemctl reload nginx
+```
+
+> 用自签证书验证链路是否通顺即可，浏览器报 `NET::ERR_CERT_AUTHORITY_INVALID` 属于预期。
+
+---
+
 ## ⬆️ 升级与回滚（`scripts/upgrade-nginx.sh`）
 
 不依赖面板的升级工具，适合脚本化运维、批量机器，以及面板自身也要跟着升级的场景。

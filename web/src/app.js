@@ -175,12 +175,13 @@
                 };
 
                 const notifications = ref([]);
-                const notify = (type, message) => {
+                // duration 可调：warn 类提示（例如"已生成自签占位证书"）需要停留更久才读得完
+                const notify = (type, message, duration = 4000) => {
                     const id = Date.now() + Math.random();
                     notifications.value.push({ id, type, message });
                     setTimeout(() => {
                         notifications.value = notifications.value.filter(n => n.id !== id);
-                    }, 4000);
+                    }, duration);
                 };
                 const removeNotification = (id) => {
                     notifications.value = notifications.value.filter(n => n.id !== id);
@@ -188,6 +189,7 @@
                 const noticeStyle = (type) => ({
                     success: 'border-emerald-400/40 text-emerald-200',
                     error: 'border-red-400/40 text-red-200',
+                    warn: 'border-amber-400/40 text-amber-200',
                     info: 'border-blue-400/40 text-blue-200'
                 }[type] || 'border-white/10 text-gray-200');
 
@@ -1091,6 +1093,11 @@
                             showSiteModal.value = false;
                             await fetchSites();
                             notify('success', isSiteEdit.value ? '站点更新成功' : '站点创建成功');
+                            // 后端在缺证书时会自动补一张自签占位证书，这里必须让人看见，
+                            // 否则用户会以为站点已正常对外服务，实际浏览器报证书不受信任。
+                            if (data && data.warning) {
+                                notify('warn', data.warning, 20000);
+                            }
                         } else {
                             notify('error', '操作失败: ' + (data.error || res.statusText));
                         }

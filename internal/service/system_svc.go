@@ -5,7 +5,9 @@ import (
 	"nginx-mgr/internal/executor"
 	"nginx-mgr/internal/model"
 	"os"
+	pathpkg "path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +37,7 @@ func NewSystemService(notificationSvc *NotificationService, trafficMgr *TrafficU
 func (s *SystemService) Reload() error {
 	sbin := model.SbinPath()
 	if out, err := executor.ExecuteSimple(sbin, "-t"); err != nil {
-		return fmt.Errorf("Nginx 配置测试失败: %s%s", strings.TrimSpace(out), zoneConflictHint(out))
+		return fmt.Errorf("Nginx 配置测试失败: %s%s%s", strings.TrimSpace(out), zoneConflictHint(out), certMissingHint(out))
 	}
 
 	if _, err := executor.ExecuteSimple("systemctl", "reload", "nginx"); err == nil {
@@ -68,6 +70,38 @@ func zoneConflictHint(out string) string {
 		"重复声明时 size 必须完全一致。请把主配置与站点里的尺寸统一；" +
 		"v1.0.4 起站点模板不再注入 ssl_session_cache，重新创建或编辑站点即可消除该冲突。"
 }
+
+// certMissingHint 把 "cannot load certificate" 类 emerg 翻译成可执行的修复建议。
+// 触发场景：本机 nginx 没有 ACME 模块，站点模板引用 $SSLDir/<domain>.crt|.key，
+// 而这两个文件不存在（面板很最早的版本连 ssl 目录都不建）。
+// nginx 原文只是 BIO_new_file() failed + errno，用户无法判断要做什么。
+// 路径统一用 path 包拼（nginx 配置永远是正斜杠，filepath 在 Windows 上会给出反斜杠）。
+func certMissingHint(out string) string {
+	if !strings.Contains(out, "cannot load certificate") &&
+		!strings.Contains(out, "BIO_new_file() failed") &&
+		!strings.Contains(out, "cannot load certificate key") {
+		return ""
+	}
+	path := ""
+	if m := certPathRe.FindStringSubmatch(out); len(m) > 1 {
+		path = m[1]
+	}
+	if path == "" {
+		return "\n提示：站点模板引用的证书文件不存在。请把 <域名>.crt 与 <域名>.key 放到 " +
+			CertDir() + "/ 下（文件名必须与站点域名一致），然后重试。"
+	}
+	base := strings.TrimSuffix(strings.TrimSuffix(pathpkg.Base(path), ".crt"), ".key")
+	return "\n提示：找不到证书文件 " + path + "。本机 nginx 未编译 ACME 模块，面板只读取固定路径，" +
+		"因此该域名的证书需要自己放：\n" +
+		"  证书: " + pathpkg.Join(pathpkg.Dir(path), base+".crt") + "\n" +
+		"  私钥: " + pathpkg.Join(pathpkg.Dir(path), base+".key") + "\n" +
+		"两种做法任选：\n" +
+		"  1) 申请正式证书（Cloudflare Origin Certificate / Let's Encrypt）后保存到上面两个路径；\n" +
+		"  2) 直接重新保存站点，面板会自动补一张自签占位证书（浏览器会提示不受信任）。"
+}
+
+// certPathRe 从 emerg 里抠出证书路径，用于给出精确提示。
+var certPathRe = regexp.MustCompile(`cannot load certificate(?: key)? "([^"]+)"`)
 
 // nginxPid 读取 pid 文件并确认进程仍存活，返回 0 表示未运行。
 func nginxPid() int {
