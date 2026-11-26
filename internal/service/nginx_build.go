@@ -164,6 +164,15 @@ func BuildNginxFromSource(ctx context.Context, status *executor.TaskStatus, opts
 	ensureBaseConfig(status, !hadConf)
 	writeSystemdUnit(status)
 
+	// ACME 模块不可能来自官方 tarball，必须单独编译成动态模块（Rust），再 load_module 挂载。
+	// 失败只降级为"没有 acme_certificate"，不影响 nginx 本身可用。
+	if err := BuildACMEModule(ctx, status, srcDir); err != nil {
+		status.AddLog("!!! ACME 模块未启用: " + err.Error())
+		status.AddLog("!!! 站点将改用固定证书路径 <conf>/ssl/<domain>.crt|.key（缺证书时面板自动补自签）")
+	} else if err := WireACME(status); err != nil {
+		status.AddLog("!!! ACME 配置写入失败: " + err.Error())
+	}
+
 	// 8) 校验并启动
 	model.ResetPathCache()
 	if out, err := executor.ExecuteSimple(model.SbinPath(), "-t"); err != nil {
@@ -411,17 +420,12 @@ func nginxConfigureArgs(confDir string) []string {
 
 func configureNginx(ctx context.Context, status *executor.TaskStatus, srcDir string) error {
 	confDir := model.ConfDir()
-	base := nginxConfigureArgs(confDir)
 
-	// ACME 模块只在较新分支提供；优先带上，失败则退回标准模块集。
-	withACME := append(append([]string{}, base...), "--with-http_acme_module")
-
-	status.AddLog(">>> configure（硬化编译参数 + ACME 模块）")
-	if err := executor.ExecuteCommandIn(ctx, status, srcDir, "./configure", withACME...); err == nil {
-		return nil
-	}
-	status.AddLog("!!! ACME 模块不可用，改用标准模块集重试")
-	if err := executor.ExecuteCommandIn(ctx, status, srcDir, "./configure", base...); err != nil {
+	// 注意：`--with-http_acme_module` 不是 nginx 的 configure 选项（官方源码包不含 ACME 模块），
+	// 以前带上它会让 configure 直接失败、整体退回标准模块集，acme_certificate 就此永远缺失。
+	// 现在只 configure 标准模块集，ACME 由 BuildACMEModule 单独编成动态模块挂载。
+	status.AddLog(">>> configure（硬化编译参数）")
+	if err := executor.ExecuteCommandIn(ctx, status, srcDir, "./configure", nginxConfigureArgs(confDir)...); err != nil {
 		return fmt.Errorf("configure 失败: %w", err)
 	}
 	return nil
@@ -640,27 +644,21 @@ WantedBy=multi-user.target
 }
 
 // ACME 模块可用时补一份 issuer 配置，站点模板里的 acme_certificate 才能通过 nginx -t。
+// 模块来自动态 .so（-V 里看不到），所以按"模块文件存在"或"主配置已 load_module"判断。
 func maybeWriteACMEIssuer(status *executor.TaskStatus) {
-	out, err := executor.ExecuteSimple(model.SbinPath(), "-V")
-	if err != nil || !strings.Contains(out, "http_acme_module") {
+	if !ACMEModuleInstalled() && !strings.Contains(acmeMainConfText(), "load_module") {
 		return
 	}
-	confDir := model.ConfDir()
-	target := filepath.Join(confDir, "conf.d", "00-acme-issuer.conf")
-	if _, err := os.Stat(target); err == nil {
-		return
+	if err := WireACME(status); err != nil {
+		status.AddLog("!!! 写入 ACME 配置失败: " + err.Error())
 	}
-	_ = os.MkdirAll(filepath.Join(confDir, "conf.d"), 0o755)
-	_ = os.MkdirAll(filepath.Join(confDir, "acme"), 0o755)
-	content := `acme_issuer letsencrypt {
-    uri              https://acme-v02.api.letsencrypt.org/directory;
-    state_path       ` + filepath.Join(confDir, "acme") + `;
-    accept_terms_of_service;
 }
-`
-	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
-		status.AddLog("!!! 写入 ACME issuer 配置失败: " + err.Error())
-		return
+
+// acmeMainConfText 读取主配置文本，读不到时返回空串。
+func acmeMainConfText() string {
+	data, err := os.ReadFile(filepath.Join(model.ConfDir(), "nginx.conf"))
+	if err != nil {
+		return ""
 	}
-	status.AddLog("✅ 已写入 ACME issuer: " + target)
+	return string(data)
 }

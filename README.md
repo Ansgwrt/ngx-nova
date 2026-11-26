@@ -140,9 +140,69 @@ docker compose up -d
 
 ---
 
-## 🔒 HTTPS 证书（本机 nginx 没有 ACME 模块时）
+## 🔒 HTTPS 证书：ACME 模块从哪来
 
-面板编译的 nginx 只带 `http_ssl_module`，没有 `acme_certificate` 指令，因此站点模板走**固定证书路径**：
+### 为什么官方源码包里没有 `acme_certificate`
+
+`acme_certificate` / `$acme_certificate` / `$acme_certificate_key` / `acme_issuer` / `acme_shared_zone` 这些指令**不在 nginx 源码里**，它们来自第三方项目 [nginx-acme](https://github.com/nginx/nginx-acme)（Rust 实现，编译成动态模块）。
+
+所以：
+
+- `--with-http_acme_module` **不是** nginx 的 configure 选项。v1.0.5 及更早的安装流程带上它 → `configure: error: invalid option "--with-http_acme_module"` → 整体退回标准模块集，`acme_certificate` 于是永远缺失（启动日志里一直是 `(acme=false)`）。
+- 正确做法是单独编译动态模块，前置条件是：Rust ≥ 1.85、`clang` + `libclang`（rust-bindgen 需要）、与运行中 nginx **同版本**的源码树、以及带 `--with-compat` 的 nginx 二进制（本面板编译时默认带）。
+
+### v1.0.6 起：装 nginx 时顺手把模块编好
+
+安装/升级 nginx 的流程变成：
+
+1. `configure`（标准模块集，不再传假选项）→ `make` → `make install`；
+2. `cargo build --release` 编译 nginx-acme → 装到 `/usr/local/nginx/modules/ngx_http_acme_module.so`；
+3. 主配置幂等补 `load_module modules/ngx_http_acme_module.so;`、`resolver`、`acme_shared_zone`；
+4. 写 `conf.d/00-acme-issuer.conf`（Let's Encrypt 签发器，状态目录 `<conf>/acme`）。
+
+细节：
+
+- 缺依赖会自动补：`apt-get install clang libclang-dev pkg-config libssl-dev libpcre2-dev zlib1g-dev`，`cargo` 缺失时用 rustup minimal 装；想自己管工具链就设 `NGX_NOVA_SKIP_RUSTUP=1`，面板会跳过模块、回到固定证书路径模式。
+- 模块编不出来**只降级不失败**：nginx 本身照常装好，日志给 `!!! ACME 模块未启用: ...` 与后续补救命令。
+- 成功时日志依次出现 `✅ ACME 动态模块已安装` / `✅ 主配置已挂载 ACME 模块` / `✅ 已写入 ACME issuer`，面板启动日志变成 `证书目录就绪: /etc/nginx/ssl (acme=true)`，站点模板自动渲染 `acme_certificate letsencrypt`。
+
+### 已经装好的机器（v1.0.5 及更早）
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Ansgwrt/ngx-nova/main/scripts/install-acme-module.sh
+sudo bash install-acme-module.sh              # 自动找源码树 / 装依赖 / 编译 / 接线 / nginx -t
+sudo bash install-acme-module.sh --dry-run    # 先看要做什么
+sudo bash install-acme-module.sh --skip-deps  # 依赖已齐，跳过 apt 与 rustup
+```
+
+低配机器上首次编译约 5–15 分钟（脚本固定 `-j 1`，避免 1G 内存的机器被 rustc 打爆）。
+
+### 站点里怎么写
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name example.com;
+    acme_certificate letsencrypt;            # 标识符自动取自 server_name
+    ssl_certificate     $acme_certificate;
+    ssl_certificate_key $acme_certificate_key;
+    ssl_certificate_cache max=2;             # 别每请求解析一次证书
+}
+
+server {                                     # HTTP-01 挑战必须有 80 监听
+    listen 80;
+    server_name example.com;
+    location / { return 301 https://$host$request_uri; }
+}
+```
+
+- 80 端口那个 server 不能缺；`/.well-known/acme-challenge/` 交给模块处理，别用一个空 `location` 或 `root` 抢答成 404。
+- 账号密钥、签发结果都在 `<conf>/acme/`（`account.key`、`account.url`、`<域名>-<hash>.crt/.key`），删掉等于重新注册账号。
+- 需要 `resolver`（模块要解析 ACME 服务域名），v1.0.6 的接线会自动加 `resolver 1.1.1.1 8.8.8.8 ipv6=off valid=300s;`；已有自己的 `resolver` 不会被覆盖。
+
+### 没有 ACME 模块时的兜底（固定证书路径）
+
+面板编译的 nginx 若没挂上模块，站点模板自动退回**固定证书路径**：
 
 ```
 <conf 目录>/ssl/<域名>.crt     # 例如 /etc/nginx/ssl/example.com.crt

@@ -92,9 +92,11 @@ nginx -v && nginx -t && systemctl is-active nginx
    ```
 
    构建：`cd web/build && npm ci && npm run build`。产物合计约 385KB（原方案为完整版 Vue + Tailwind JIT 运行时编译，1.1MB+）。
-4. **ACME 模块**：站点模板历史上依赖 `acme_certificate` 指令，而官方 nginx 源码包**不包含** ACME 模块（`acme_certificate` 来自第三方模块）。当前实现会先探测 `nginx -V`：
-   - 有 ACME 模块：渲染 `acme_certificate letsencrypt`，行为与旧版一致；
-   - 没有：渲染自管证书路径 `<conf>/ssl/<domain>.crt|.key`，需要你把证书放到对应位置，否则 `nginx -t` 会失败并自动回滚。
+4. **ACME 模块**：站点模板依赖 `acme_certificate` 指令，而它来自第三方模块 [nginx-acme](https://github.com/nginx/nginx-acme)，官方 nginx 源码包**不包含**。
+   - v1.0.5 及更早：安装流程传 `--with-http_acme_module`（nginx 并无此 configure 选项）→ configure 失败 → 退回标准模块集，模块永远缺失，`acme=false`。
+   - v1.0.6 起：nginx 装好后单独把 nginx-acme 编成动态模块（`cargo build --release`，依赖 Rust ≥ 1.85 / clang / libclang），装到 `<prefix>/modules/ngx_http_acme_module.so`，主配置幂等补 `load_module` + `resolver` + `acme_shared_zone`，并写 `conf.d/00-acme-issuer.conf`。任何一步失败都只降级为固定证书路径，不影响 nginx 可用；面板靠"模块文件存在或主配置里 load_module"判断 `acme=true`。
+   - 探测顺序：`nginx -V` 含 `http_acme_module` → 主配置非注释 `load_module` 含 acme（动态模块不会出现在 `-V` 里）。
+   - 没有模块时渲染自管证书路径 `<conf>/ssl/<domain>.crt|.key`，缺失时面板自动补自签占位证书。
    同理 `brotli` 指令也按模块存在与否决定是否渲染。
 
 5. **升级会覆盖第三方模块**：如果现有 nginx 编译过 `--add-module`（例如 acme / brotli / 自定义过滤器），官方源码构建不会包含它们。升级接口会先返回 409 并说明原因，必须显式带 `force=true` 才继续——这能避免"升级完站点全挂"。
